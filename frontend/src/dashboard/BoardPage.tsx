@@ -891,7 +891,7 @@ function getCollaboratorColor(clientId: number) {
 function cloneScene(scene: PersistedScene): PersistedScene {
   return {
     elements: cloneJson(scene.elements ?? []),
-    appState: cloneJson(scene.appState ?? {}),
+    appState: pickPersistedAppState(scene.appState ?? {}),
     files: cloneJson(scene.files ?? {}),
   };
 }
@@ -947,9 +947,15 @@ function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
-function pickPersistedAppState(appState: AppState): PersistedScene["appState"] {
-  return {
-    viewBackgroundColor: appState.viewBackgroundColor,
-    gridSize: appState.gridSize,
-  };
+function pickPersistedAppState(appState: Partial<AppState>): PersistedScene["appState"] {
+  const persistedAppState: Record<string, unknown> = {};
+
+  if ("viewBackgroundColor" in appState) {
+    persistedAppState.viewBackgroundColor = appState.viewBackgroundColor;
+  }
+  if ("gridSize" in appState) {
+    persistedAppState.gridSize = appState.gridSize;
+  }
+
+  return persistedAppState as PersistedScene["appState"];
 }
