@@ -1,13 +1,14 @@
 const isProduction = process.env.NODE_ENV === "production";
-const appUrl = process.env.APP_URL ?? "http://localhost:3000";
+const appUrl = normalizeOrigin(process.env.APP_URL ?? "http://localhost:3000");
+const authUrl = normalizeOrigin(process.env.AUTH_URL ?? appUrl);
 
-process.env.AUTH_URL ??= appUrl;
+process.env.AUTH_URL = authUrl;
 
 export const config = {
   isProduction,
   port: process.env.BACKEND_PORT ?? 3001,
   appUrl,
-  authUrl: process.env.AUTH_URL,
+  authUrl,
   mongoUri: process.env.MONGODB_URI,
   authSecret: process.env.AUTH_SECRET,
   jsonBodyLimit: process.env.JSON_BODY_LIMIT ?? "10mb",
@@ -56,4 +57,8 @@ export function validateConfig() {
   if (errors.length > 0) {
     throw new Error(`Invalid configuration:\n- ${errors.join("\n- ")}`);
   }
+}
+
+function normalizeOrigin(value: string) {
+  return value.replace(/\/+$/, "");
 }
