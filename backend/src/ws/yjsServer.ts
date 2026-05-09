@@ -8,9 +8,10 @@ import { getSession } from "@auth/express";
 import { authConfig } from "../auth/auth.config.js";
 import { getDevOidcSession } from "../auth/devOidc.js";
 import { Board } from "../boards/boards.model.js";
+import { config } from "../config.js";
 
 export function initYjsServer(httpServer: Server) {
-  const mdb = new MongodbPersistence(process.env.MONGODB_URI!, {
+  const mdb = new MongodbPersistence(config.mongoUri!, {
     collectionName: "yjs-updates",
     multipleCollections: true,
   });

@@ -1,6 +1,7 @@
 import { ExpressAuth } from "@auth/express";
 import Google from "@auth/express/providers/google";
 import GitHub from "@auth/express/providers/github";
+import { config } from "../config.js";
 
 const providers: any[] = [];
 
@@ -32,7 +33,7 @@ if (process.env.AUTH_OIDC_ISSUER) {
 
 export const authConfig = {
   providers,
-  secret: process.env.AUTH_SECRET!,
+  secret: config.authSecret!,
   trustHost: true,
   callbacks: {
     async jwt({ token, profile }: any) {

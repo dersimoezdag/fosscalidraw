@@ -6,8 +6,10 @@ services:
       - mongo_data:/data/db
     environment:
       MONGO_INITDB_DATABASE: fosscalidraw
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME:-fosscalidraw}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-change-me-local-mongo-password}
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      test: ["CMD-SHELL", "mongosh --username \"$${MONGO_INITDB_ROOT_USERNAME}\" --password \"$${MONGO_INITDB_ROOT_PASSWORD}\" --authenticationDatabase admin --eval \"db.adminCommand('ping')\""]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -22,7 +24,7 @@ services:
         condition: service_healthy
     env_file: .env
     environment:
-      MONGODB_URI: mongodb://mongo:27017/fosscalidraw
+      MONGODB_URI: mongodb://${MONGO_ROOT_USERNAME:-fosscalidraw}:${MONGO_ROOT_PASSWORD:-change-me-local-mongo-password}@mongo:27017/fosscalidraw?authSource=admin
     ports:
       - "3001:3001"
 
@@ -33,7 +35,6 @@ services:
     restart: unless-stopped
     depends_on:
       - backend
-    env_file: .env
     ports:
       - "3000:80"
 

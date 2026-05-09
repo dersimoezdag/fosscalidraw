@@ -1,7 +1,8 @@
 import mongoose from "mongoose";
+import { config } from "./config.js";
 
 export async function connectMongo() {
-  const uri = process.env.MONGODB_URI!;
+  const uri = config.mongoUri!;
   await mongoose.connect(uri);
   console.log("MongoDB connected");
 }
