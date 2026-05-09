@@ -51,6 +51,7 @@ boardsRouter.post("/", async (req, res) => {
     ownerEmail: user.email,
     members: [],
     publicAccess: "private",
+    archived: false,
     scene: { elements: [], appState: {}, files: {} },
   });
   res.status(201).json(board);
@@ -61,11 +62,29 @@ boardsRouter.patch("/:id", async (req, res) => {
   if (!board) { res.status(404).json({ error: "Not found" }); return; }
 
   const access = getBoardAccess(board, (req as any).user);
-  if (!access.canEdit) { res.status(403).json({ error: "Forbidden" }); return; }
+  const updates: Record<string, unknown> = {};
+
+  if (typeof req.body.title === "string") {
+    if (!access.canEdit && !access.canManage) { res.status(403).json({ error: "Forbidden" }); return; }
+    updates.title = req.body.title.trim() || "Untitled Board";
+  }
+
+  if (typeof req.body.archived === "boolean") {
+    if (!access.canManage) { res.status(403).json({ error: "Forbidden" }); return; }
+    updates.archived = req.body.archived;
+    if (req.body.archived) {
+      updates.publicAccess = "view";
+    }
+  }
+
+  if (Object.keys(updates).length === 0) {
+    res.status(400).json({ error: "No supported updates" });
+    return;
+  }
 
   const updatedBoard = await Board.findByIdAndUpdate(
     req.params.id,
-    { title: req.body.title },
+    updates,
     { new: true }
   );
   res.json(updatedBoard);
@@ -133,6 +152,7 @@ boardsRouter.delete("/:id/members/:email", async (req, res) => {
 
 function getBoardAccess(board: any, user?: any) {
   const publicAccess = board.publicAccess ?? "private";
+  const archived = Boolean(board.archived);
   const email = user?.email;
   const member = email ? board.members.find((m: any) => m.email === email) : null;
   const isOwner = Boolean(email && board.ownerEmail === email);
@@ -141,7 +161,7 @@ function getBoardAccess(board: any, user?: any) {
   return {
     role,
     canView: isOwner || Boolean(member) || publicAccess === "view" || publicAccess === "edit",
-    canEdit: isOwner || member?.role === "editor" || publicAccess === "edit",
+    canEdit: !archived && (isOwner || member?.role === "editor" || publicAccess === "edit"),
     canManage: isOwner,
   };
 }

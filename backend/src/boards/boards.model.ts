@@ -6,6 +6,7 @@ export interface IBoard extends Document {
   ownerEmail: string;
   members: { email: string; role: "editor" | "viewer" }[];
   publicAccess: "private" | "view" | "edit";
+  archived: boolean;
   scene?: {
     elements?: unknown[];
     appState?: Record<string, unknown>;
@@ -31,6 +32,7 @@ const BoardSchema = new Schema<IBoard>(
       enum: ["private", "view", "edit"],
       default: "private",
     },
+    archived: { type: Boolean, default: false },
     scene: {
       type: Schema.Types.Mixed,
       default: { elements: [], appState: {}, files: {} },

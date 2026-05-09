@@ -45,6 +45,7 @@ export function initYjsServer(httpServer: Server) {
 
     const board = await Board.findById(boardId).catch(() => null);
     if (!board) { socket.destroy(); return; }
+    if (board.archived) { socket.destroy(); return; }
 
     const email = session?.user?.email;
     const hasAccess =

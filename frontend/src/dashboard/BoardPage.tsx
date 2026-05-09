@@ -128,16 +128,17 @@ export function BoardPage() {
   }, []);
 
   const readYjsScene = useCallback((collab: CollabProvider): PersistedScene => ({
-    elements: collab.yScene.get("elements") ?? [],
-    appState: collab.yScene.get("appState") ?? {},
-    files: collab.yScene.get("files") ?? {},
+    elements: cloneJson(collab.yScene.get("elements") ?? []),
+    appState: cloneJson(collab.yScene.get("appState") ?? {}),
+    files: cloneJson(collab.yScene.get("files") ?? {}),
   }), []);
 
   const writeYjsScene = useCallback((collab: CollabProvider, scene: PersistedScene) => {
+    const nextScene = cloneScene(scene);
     collab.ydoc.transact(() => {
-      collab.yScene.set("elements", scene.elements ?? []);
-      collab.yScene.set("appState", scene.appState ?? {});
-      collab.yScene.set("files", scene.files ?? {});
+      collab.yScene.set("elements", nextScene.elements ?? []);
+      collab.yScene.set("appState", nextScene.appState ?? {});
+      collab.yScene.set("files", nextScene.files ?? {});
     }, collabOrigin);
   }, []);
 
@@ -255,7 +256,7 @@ export function BoardPage() {
               collab.yScene.has("elements") ||
               collab.yScene.has("appState") ||
               collab.yScene.has("files");
-            const scene = hasRemoteScene ? remoteScene : board.scene ?? {};
+            const scene = cloneScene(hasRemoteScene ? remoteScene : board.scene ?? {});
 
             if (!hasRemoteScene) {
               writeYjsScene(collab, scene);
@@ -358,11 +359,11 @@ export function BoardPage() {
   ) {
     if (!activeCanEdit || applyingRemoteSceneRef.current) return;
 
-    const scene: PersistedScene = {
+    const scene = cloneScene({
       elements: excalidrawApiRef.current?.getSceneElementsIncludingDeleted() ?? elements,
       appState: pickPersistedAppState(appState),
       files,
-    };
+    });
     const sceneJson = JSON.stringify(scene);
     if (sceneJson === lastSceneJsonRef.current) return;
     lastSceneJsonRef.current = sceneJson;
@@ -635,6 +636,18 @@ function getCollaboratorColor(clientId: number) {
     { background: "#e7f5ff", stroke: "#1971c2" },
   ];
   return palette[clientId % palette.length];
+}
+
+function cloneScene(scene: PersistedScene): PersistedScene {
+  return {
+    elements: cloneJson(scene.elements ?? []),
+    appState: cloneJson(scene.appState ?? {}),
+    files: cloneJson(scene.files ?? {}),
+  };
+}
+
+function cloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
 }
 
 function pickPersistedAppState(appState: AppState): PersistedScene["appState"] {
