@@ -5,6 +5,8 @@ export interface IBoard extends Document {
   ownerId: string;
   ownerEmail: string;
   members: { email: string; role: "editor" | "viewer" }[];
+  blockedMembers: { email: string; blockedAt: Date }[];
+  blockedGuests: { guestId: string; name?: string; blockedAt: Date }[];
   publicAccess: "private" | "view" | "edit";
   archived: boolean;
   scene?: {
@@ -25,6 +27,19 @@ const BoardSchema = new Schema<IBoard>(
       {
         email: String,
         role: { type: String, enum: ["editor", "viewer"], default: "editor" },
+      },
+    ],
+    blockedMembers: [
+      {
+        email: String,
+        blockedAt: { type: Date, default: Date.now },
+      },
+    ],
+    blockedGuests: [
+      {
+        guestId: String,
+        name: String,
+        blockedAt: { type: Date, default: Date.now },
       },
     ],
     publicAccess: {

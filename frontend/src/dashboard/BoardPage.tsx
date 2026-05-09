@@ -39,6 +39,7 @@ interface BoardAccess {
   role: string;
   canEdit: boolean;
   canManage: boolean;
+  guestId?: string;
 }
 
 interface BoardDetails {
@@ -57,6 +58,8 @@ interface PersistedScene {
 interface ActiveUser {
   clientId: number;
   id?: string;
+  guestId?: string;
+  kickId?: string;
   name: string;
   email?: string;
   color?: { background: string; stroke: string };
@@ -187,6 +190,8 @@ export function BoardPage() {
       activeUsers.push({
         clientId,
         id: state.id,
+        guestId: state.guestId,
+        kickId: state.kickId,
         name: userName,
         email: state.email,
         color: userColor,
@@ -244,6 +249,11 @@ export function BoardPage() {
         if (board.access.canEdit) {
           const isGuestEditor = board.access.role === "guest";
           const collaboratorName = isGuestEditor ? guestName.trim() : getCollaboratorName(session?.user?.name);
+          const kickId = session?.user?.email
+            ? `user:${session.user.email.toLowerCase()}`
+            : board.access.guestId
+              ? `guest:${board.access.guestId}`
+              : `client:${collab?.provider.awareness.clientID ?? "pending"}`;
 
           if (isGuestEditor && !collaboratorName) {
             const scene = board.scene ?? {};
@@ -257,8 +267,10 @@ export function BoardPage() {
           collab = createCollabProvider(id);
           providerRef.current = collab;
           collab.provider.awareness.setLocalStateField("username", collaboratorName);
-          collab.provider.awareness.setLocalStateField("id", session?.user?.id ?? `guest-${collab.provider.awareness.clientID}`);
+          collab.provider.awareness.setLocalStateField("id", session?.user?.id ?? board.access.guestId ?? `guest-${collab.provider.awareness.clientID}`);
           collab.provider.awareness.setLocalStateField("email", session?.user?.email);
+          collab.provider.awareness.setLocalStateField("guestId", board.access.guestId);
+          collab.provider.awareness.setLocalStateField("kickId", kickId);
           collab.provider.awareness.setLocalStateField("color", getCollaboratorColor(collab.provider.awareness.clientID));
           collab.provider.awareness.on("change", (changes: any) => {
             const changedClients = [
@@ -390,17 +402,21 @@ export function BoardPage() {
     if (!canManage || user.isCurrent) return;
 
     const collab = providerRef.current;
-    const kickId = user.id ?? String(user.clientId);
+    const kickId = user.kickId ?? user.id ?? `client:${user.clientId}`;
     if (collab) {
       collab.yScene.set(`${kickKeyPrefix}${kickId}`, Date.now());
     }
 
-    if (user.email) {
-      await fetch(`/api/boards/${id}/members/${encodeURIComponent(user.email)}`, {
-        method: "DELETE",
-        credentials: "include",
-      }).catch(() => undefined);
-    }
+    await fetch(`/api/boards/${id}/remove-active-user`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: user.email,
+        guestId: user.guestId,
+        name: user.name,
+      }),
+    }).catch(() => undefined);
 
     setActiveUsersOpen(false);
   }
@@ -852,10 +868,11 @@ function readYjsScenePayload(collab: CollabProvider): PersistedScene {
 
 function isKicked(collab: CollabProvider) {
   const localState: any = collab.provider.awareness.getLocalState();
-  const localId = localState?.id;
+  const localKickId = localState?.kickId;
   return Boolean(
-    (localId && collab.yScene.has(`${kickKeyPrefix}${localId}`)) ||
-    collab.yScene.has(`${kickKeyPrefix}${collab.provider.awareness.clientID}`)
+    (localKickId && collab.yScene.has(`${kickKeyPrefix}${localKickId}`)) ||
+    collab.yScene.has(`${kickKeyPrefix}${localState?.id}`) ||
+    collab.yScene.has(`${kickKeyPrefix}client:${collab.provider.awareness.clientID}`)
   );
 }
 

@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { Board } from "./boards.model.js";
 import { optionalAuth, requireAuth } from "../middleware/authGuard.js";
+import { getOrSetGuestId } from "../guests/guestIdentity.js";
 
 export const boardsRouter = Router();
 
@@ -8,7 +9,8 @@ boardsRouter.get("/:id", optionalAuth, async (req, res) => {
   const board = await Board.findById(req.params.id);
   if (!board) { res.status(404).json({ error: "Not found" }); return; }
 
-  const access = getBoardAccess(board, (req as any).user);
+  const guestId = getOrSetGuestId(req, res);
+  const access = getBoardAccess(board, (req as any).user, guestId);
   if (!access.canView) { res.status(401).json({ error: "Unauthorized" }); return; }
 
   res.json({
@@ -17,6 +19,7 @@ boardsRouter.get("/:id", optionalAuth, async (req, res) => {
       role: access.role,
       canEdit: access.canEdit,
       canManage: access.canManage,
+      guestId: access.role === "guest" ? guestId : undefined,
     },
   });
 });
@@ -25,7 +28,7 @@ boardsRouter.patch("/:id/scene", optionalAuth, async (req, res) => {
   const board = await Board.findById(req.params.id);
   if (!board) { res.status(404).json({ error: "Not found" }); return; }
 
-  const access = getBoardAccess(board, (req as any).user);
+  const access = getBoardAccess(board, (req as any).user, getOrSetGuestId(req, res));
   if (!access.canEdit) { res.status(403).json({ error: "Forbidden" }); return; }
 
   board.scene = normalizeScene(req.body.scene);
@@ -50,6 +53,8 @@ boardsRouter.post("/", async (req, res) => {
     ownerId: user.id,
     ownerEmail: user.email,
     members: [],
+    blockedMembers: [],
+    blockedGuests: [],
     publicAccess: "private",
     archived: false,
     scene: { elements: [], appState: {}, files: {} },
@@ -117,12 +122,50 @@ boardsRouter.patch("/:id/share", async (req, res) => {
   res.json(board);
 });
 
-boardsRouter.post("/:id/members", async (req, res) => {
-  const { email, role } = req.body;
+boardsRouter.post("/:id/remove-active-user", async (req, res) => {
   const existingBoard = await Board.findById(req.params.id);
   if (!existingBoard) { res.status(404).json({ error: "Not found" }); return; }
   if (!getBoardAccess(existingBoard, (req as any).user).canManage) {
     res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+
+  const email = typeof req.body.email === "string" ? req.body.email.trim().toLowerCase() : "";
+  const guestId = typeof req.body.guestId === "string" ? req.body.guestId.trim() : "";
+  const guestName = typeof req.body.name === "string" ? req.body.name.trim() : undefined;
+
+  if (!email && !guestId) {
+    res.status(400).json({ error: "email or guestId is required" });
+    return;
+  }
+
+  const update: Record<string, unknown> = {};
+  if (email) {
+    update.$pull = { members: { email } };
+    update.$addToSet = { blockedMembers: { email, blockedAt: new Date() } };
+  } else {
+    update.$addToSet = { blockedGuests: { guestId, name: guestName, blockedAt: new Date() } };
+  }
+
+  const board = await Board.findByIdAndUpdate(
+    req.params.id,
+    update,
+    { new: true }
+  );
+  res.json(board);
+});
+
+boardsRouter.post("/:id/members", async (req, res) => {
+  const email = typeof req.body.email === "string" ? req.body.email.trim().toLowerCase() : "";
+  const { role } = req.body;
+  const existingBoard = await Board.findById(req.params.id);
+  if (!existingBoard) { res.status(404).json({ error: "Not found" }); return; }
+  if (!getBoardAccess(existingBoard, (req as any).user).canManage) {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+  if (!email) {
+    res.status(400).json({ error: "email is required" });
     return;
   }
 
@@ -144,24 +187,37 @@ boardsRouter.delete("/:id/members/:email", async (req, res) => {
 
   const board = await Board.findByIdAndUpdate(
     req.params.id,
-    { $pull: { members: { email: req.params.email } } },
+    { $pull: { members: { email: req.params.email.toLowerCase() } } },
     { new: true }
   );
   res.json(board);
 });
 
-function getBoardAccess(board: any, user?: any) {
+function getBoardAccess(board: any, user?: any, guestId?: string | null) {
   const publicAccess = board.publicAccess ?? "private";
   const archived = Boolean(board.archived);
   const email = user?.email;
-  const member = email ? board.members.find((m: any) => m.email === email) : null;
+  const normalizedEmail = typeof email === "string" ? email.toLowerCase() : "";
+  const member = normalizedEmail
+    ? board.members.find((m: any) => m.email?.toLowerCase() === normalizedEmail)
+    : null;
   const isOwner = Boolean(email && board.ownerEmail === email);
+  const isBlockedMember = !isOwner && Boolean(
+    normalizedEmail &&
+    board.blockedMembers?.some((m: any) => m.email?.toLowerCase() === normalizedEmail)
+  );
+  const isBlockedGuest = Boolean(
+    !email &&
+    guestId &&
+    board.blockedGuests?.some((g: any) => g.guestId === guestId)
+  );
   const role = isOwner ? "owner" : member?.role ?? (publicAccess === "private" ? "none" : "guest");
+  const blocked = isBlockedMember || isBlockedGuest;
 
   return {
     role,
-    canView: isOwner || Boolean(member) || publicAccess === "view" || publicAccess === "edit",
-    canEdit: !archived && (isOwner || member?.role === "editor" || publicAccess === "edit"),
+    canView: !blocked && (isOwner || Boolean(member) || publicAccess === "view" || publicAccess === "edit"),
+    canEdit: !blocked && !archived && (isOwner || member?.role === "editor" || publicAccess === "edit"),
     canManage: isOwner,
   };
 }

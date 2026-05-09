@@ -9,6 +9,7 @@ import { authConfig } from "../auth/auth.config.js";
 import { getDevOidcSession } from "../auth/devOidc.js";
 import { Board } from "../boards/boards.model.js";
 import { config } from "../config.js";
+import { getGuestId } from "../guests/guestIdentity.js";
 
 export function initYjsServer(httpServer: Server) {
   const mdb = new MongodbPersistence(config.mongoUri!, {
@@ -49,10 +50,22 @@ export function initYjsServer(httpServer: Server) {
     if (board.archived) { socket.destroy(); return; }
 
     const email = session?.user?.email;
+    const guestId = getGuestId(req);
+    const normalizedEmail = typeof email === "string" ? email.toLowerCase() : "";
+    const isOwner = Boolean(email && board.ownerEmail === email);
+    const isBlockedMember =
+      !isOwner &&
+      Boolean(normalizedEmail && board.blockedMembers?.some((m: any) => m.email?.toLowerCase() === normalizedEmail));
+    const isBlockedGuest =
+      Boolean(!email && guestId && board.blockedGuests?.some((g: any) => g.guestId === guestId));
     const hasAccess =
-      board.publicAccess === "edit" ||
-      board.ownerEmail === email ||
-      board.members.some((m: any) => m.email === email && m.role === "editor");
+      !isBlockedMember &&
+      !isBlockedGuest &&
+      (
+        board.publicAccess === "edit" ||
+        isOwner ||
+        board.members.some((m: any) => m.email?.toLowerCase() === normalizedEmail && m.role === "editor")
+      );
 
     if (!hasAccess) { socket.destroy(); return; }
 
