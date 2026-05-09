@@ -12,6 +12,10 @@ export interface PersistedScene {
   files?: BinaryFiles;
 }
 
+export type BoardBackgroundStyle = "solid" | "dotted";
+
+export const dottedBackgroundAppStateKey = "fosscalidrawBackgroundStyle";
+
 export const collabOrigin = "fosscalidraw-local";
 export const sceneSyncDelayMs = 120;
 export const minLiveSceneSyncDelayMs = 12;
@@ -188,7 +192,11 @@ export function mergeScenes(
 }
 
 export function pickPersistedAppState(_appState: Partial<AppState>): PersistedScene["appState"] {
-  return {};
+  const appState = _appState as Partial<AppState> & Record<string, unknown>;
+  return {
+    viewBackgroundColor: appState.viewBackgroundColor,
+    [dottedBackgroundAppStateKey]: appState[dottedBackgroundAppStateKey],
+  } as PersistedScene["appState"];
 }
 
 function writeYjsScenePayload(collab: CollabProvider, scene: PersistedScene) {

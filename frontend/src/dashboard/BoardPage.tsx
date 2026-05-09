@@ -20,6 +20,8 @@ import {
   cloneScene,
   collabOrigin,
   createSceneSnapshot,
+  BoardBackgroundStyle,
+  dottedBackgroundAppStateKey,
   getNextLiveSceneSyncDelay,
   getYjsSceneUpdatedAt,
   hasYjsScene,
@@ -74,6 +76,7 @@ export function BoardPage() {
   const navigate = useNavigate();
   const providerRef = useRef<CollabProvider | null>(null);
   const excalidrawApiRef = useRef<ExcalidrawImperativeAPI | null>(null);
+  const canvasContainerRef = useRef<HTMLDivElement | null>(null);
   const pendingRemoteSceneRef = useRef<{ scene: PersistedScene; editable: boolean } | null>(null);
   const applyingRemoteSceneRef = useRef(false);
   const isPointerDownRef = useRef(false);
@@ -90,11 +93,13 @@ export function BoardPage() {
   const sceneSaveTimerRef = useRef<number | null>(null);
   const lastSceneJsonRef = useRef("");
   const lastSceneRef = useRef<PersistedScene | null>(null);
+  const backgroundStyleRef = useRef<BoardBackgroundStyle>("solid");
   const titleInputRef = useRef<HTMLInputElement | null>(null);
   const { colorScheme } = useColorScheme();
   const [title, setTitle] = useState(t("boardUntitled"));
   const [titleDraft, setTitleDraft] = useState(title);
   const [isRenamingTitle, setIsRenamingTitle] = useState(false);
+  const [backgroundStyle, setBackgroundStyle] = useState<BoardBackgroundStyle>("solid");
   const [initialData, setInitialData] = useState<ExcalidrawInitialDataState | null>(null);
   const [sceneReady, setSceneReady] = useState(false);
   const [collaborators, setCollaborators] = useState(0);
@@ -150,7 +155,8 @@ export function BoardPage() {
       api.getAppState(),
       api.getFiles()
     );
-    const nextScene = mergeScenes(localScene, scene);
+    const nextScene = withBoardBackgroundStyle(mergeScenes(localScene, scene), getSceneBackgroundStyle(scene));
+    setBoardBackgroundStyle(getSceneBackgroundStyle(nextScene));
     const restored = restore(
       nextScene,
       { viewModeEnabled: !editable },
@@ -236,6 +242,7 @@ export function BoardPage() {
 
           if (isGuestEditor && !collaboratorName) {
             const scene = board.scene ?? {};
+            setBoardBackgroundStyle(getSceneBackgroundStyle(scene));
             lastSceneJsonRef.current = JSON.stringify(scene);
             setInitialData({ ...scene, appState: { ...scene.appState, viewModeEnabled: true } });
             setSceneReady(true);
@@ -267,7 +274,7 @@ export function BoardPage() {
               return;
             }
             const remoteScene = readYjsScene(collab);
-            const scene = mergeScenes(lastSceneRef.current, remoteScene);
+            const scene = withBoardBackgroundStyle(mergeScenes(lastSceneRef.current, remoteScene), getSceneBackgroundStyle(remoteScene));
             const sceneJson = JSON.stringify(scene);
             if (sceneJson === lastSceneJsonRef.current) return;
             applyScene(scene, true);
@@ -291,12 +298,16 @@ export function BoardPage() {
                   ? (!boardUpdatedAt || remoteUpdatedAt >= boardUpdatedAt)
                   : isEmptyScene(boardScene)
               );
-            const scene = cloneScene(shouldUseRemoteScene ? remoteScene : boardScene);
+            const scene = withBoardBackgroundStyle(
+              cloneScene(shouldUseRemoteScene ? remoteScene : boardScene),
+              getSceneBackgroundStyle(shouldUseRemoteScene ? remoteScene : boardScene)
+            );
 
             if (!shouldUseRemoteScene) {
               writeYjsScene(collab, scene);
             }
 
+            setBoardBackgroundStyle(getSceneBackgroundStyle(scene));
             lastSceneJsonRef.current = JSON.stringify(scene);
             lastSceneRef.current = scene;
             setInitialData({ ...scene, appState: { ...scene.appState, viewModeEnabled: false } });
@@ -306,6 +317,7 @@ export function BoardPage() {
         }
 
         const scene = board.scene ?? {};
+        setBoardBackgroundStyle(getSceneBackgroundStyle(scene));
         lastSceneJsonRef.current = JSON.stringify(scene);
         setInitialData({ ...scene, appState: { ...scene.appState, viewModeEnabled: true } });
         setSceneReady(true);
@@ -430,11 +442,28 @@ export function BoardPage() {
     setSceneReady(false);
   }
 
+  function updateDottedBackgroundViewport(appState: Partial<AppState>) {
+    const container = canvasContainerRef.current;
+    if (!container) return;
+
+    const zoom = Math.max(0.05, getZoomValue(appState.zoom));
+    const worldGridSize = getSteppedWorldGridSize(zoom);
+    const screenGridSize = worldGridSize * zoom;
+    const scrollX = typeof appState.scrollX === "number" ? appState.scrollX : 0;
+    const scrollY = typeof appState.scrollY === "number" ? appState.scrollY : 0;
+
+    container.style.setProperty("--board-dot-size", `${getDotSize(screenGridSize)}px`);
+    container.style.setProperty("--board-dot-grid-size", `${screenGridSize}px`);
+    container.style.setProperty("--board-dot-offset-x", `${scrollX * zoom}px`);
+    container.style.setProperty("--board-dot-offset-y", `${scrollY * zoom}px`);
+  }
+
   function handleSceneChange(
     elements: readonly OrderedExcalidrawElement[],
     appState: AppState,
     files: BinaryFiles
   ) {
+    updateDottedBackgroundViewport(appState);
     if (!activeCanEdit || applyingRemoteSceneRef.current) return;
     scheduleSceneSync(elements, appState, files);
   }
@@ -486,6 +515,11 @@ export function BoardPage() {
       currentAppState,
       api?.getFiles() ?? fallbackFiles
     );
+    const nextAppState = {
+      ...(scene.appState ?? {}),
+      [dottedBackgroundAppStateKey]: backgroundStyleRef.current,
+    } as PersistedScene["appState"];
+    scene.appState = nextAppState;
     const sceneJson = JSON.stringify(scene);
     if (sceneJson === lastSceneJsonRef.current) {
       updateLiveSceneSyncDelay(scene, sceneJson.length, 0, false);
@@ -592,6 +626,27 @@ export function BoardPage() {
       flushPendingRemoteScene();
       flushPendingCollaboratorUpdate();
     }
+  }
+
+  function updateBoardBackgroundStyle(nextStyle: BoardBackgroundStyle) {
+    if (!activeCanEdit) return;
+
+    setBoardBackgroundStyle(nextStyle);
+    const api = excalidrawApiRef.current;
+    if (!api) return;
+
+    updateDottedBackgroundViewport(api.getAppState());
+    syncCurrentScene(
+      api.getSceneElementsIncludingDeleted(),
+      api.getAppState(),
+      api.getFiles(),
+      true
+    );
+  }
+
+  function setBoardBackgroundStyle(nextStyle: BoardBackgroundStyle) {
+    backgroundStyleRef.current = nextStyle;
+    setBackgroundStyle(nextStyle);
   }
 
   return (
@@ -772,7 +827,11 @@ export function BoardPage() {
         )}
       </div>
 
-      <div style={{ flex: 1 }}>
+      <div
+        ref={canvasContainerRef}
+        className={backgroundStyle === "dotted" ? "fosscalidraw-board-canvas fosscalidraw-board-canvas--dotted" : "fosscalidraw-board-canvas"}
+        style={{ flex: 1, position: "relative" }}
+      >
         {sceneReady ? (
           <Excalidraw
             key={activeCanEdit ? "editable" : "readonly"}
@@ -787,6 +846,7 @@ export function BoardPage() {
             onPointerUpdate={handlePointerUpdate}
             excalidrawAPI={(api) => {
               excalidrawApiRef.current = api;
+              updateDottedBackgroundViewport(api.getAppState());
               const pendingScene = pendingRemoteSceneRef.current;
               if (pendingScene) {
                 pendingRemoteSceneRef.current = null;
@@ -807,6 +867,22 @@ export function BoardPage() {
               <MainMenu.Separator />
               <MainMenu.DefaultItems.ToggleTheme />
               <MainMenu.DefaultItems.ChangeCanvasBackground />
+              {activeCanEdit && (
+                <MainMenu.Item
+                  onSelect={() => updateBoardBackgroundStyle(backgroundStyle === "dotted" ? "solid" : "dotted")}
+                >
+                  <span className="board-background-switch-row">
+                    <span>{t("backgroundDotted")}</span>
+                    <span
+                      className="board-background-switch"
+                      role="switch"
+                      aria-checked={backgroundStyle === "dotted"}
+                    >
+                      <span className="board-background-switch__thumb" />
+                    </span>
+                  </span>
+                </MainMenu.Item>
+              )}
             </MainMenu>
           </Excalidraw>
         ) : null}
@@ -950,4 +1026,39 @@ export function BoardPage() {
       )}
     </div>
   );
+}
+
+function getSceneBackgroundStyle(scene: PersistedScene): BoardBackgroundStyle {
+  const appState = (scene.appState ?? {}) as Record<string, unknown>;
+  return appState[dottedBackgroundAppStateKey] === "dotted" ? "dotted" : "solid";
+}
+
+function withBoardBackgroundStyle(scene: PersistedScene, style: BoardBackgroundStyle): PersistedScene {
+  return {
+    ...scene,
+    appState: {
+      ...(scene.appState ?? {}),
+      [dottedBackgroundAppStateKey]: style,
+    } as PersistedScene["appState"],
+  };
+}
+
+function getZoomValue(zoom: AppState["zoom"] | undefined): number {
+  if (typeof zoom === "number") return zoom;
+  if (zoom && typeof zoom.value === "number") return zoom.value;
+  return 1;
+}
+
+function getSteppedWorldGridSize(zoom: number): number {
+  const targetScreenGridSize = 28;
+  const rawWorldGridSize = targetScreenGridSize / zoom;
+  const magnitude = 10 ** Math.floor(Math.log10(rawWorldGridSize));
+  const normalized = rawWorldGridSize / magnitude;
+  const step = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+
+  return step * magnitude;
+}
+
+function getDotSize(screenGridSize: number): number {
+  return Math.max(1, Math.min(2, screenGridSize / 18));
 }

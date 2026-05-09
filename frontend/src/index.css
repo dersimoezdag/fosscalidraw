@@ -126,3 +126,62 @@ select {
 .theme-toggle[aria-checked="true"] .theme-toggle__thumb {
   transform: translateX(1.1rem);
 }
+
+.board-background-switch-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.85rem;
+  width: 100%;
+}
+
+.board-background-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 2.15rem;
+  height: 1.2rem;
+  border-radius: 999px;
+  background: var(--color-border);
+  flex: 0 0 auto;
+  transition: background 160ms ease;
+}
+
+.board-background-switch[aria-checked="true"] {
+  background: var(--color-primary);
+}
+
+.board-background-switch__thumb {
+  width: 0.9rem;
+  height: 0.9rem;
+  margin-left: 0.15rem;
+  border-radius: 999px;
+  background: var(--color-surface);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.22);
+  transform: translateX(0);
+  transition: transform 160ms ease;
+}
+
+.board-background-switch[aria-checked="true"] .board-background-switch__thumb {
+  transform: translateX(0.95rem);
+}
+
+.fosscalidraw-board-canvas--dotted .excalidraw {
+  position: relative;
+}
+
+.fosscalidraw-board-canvas--dotted .excalidraw::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background-image: radial-gradient(circle, color-mix(in srgb, var(--color-text-muted) 50%, transparent) var(--board-dot-size, 1.25px), transparent var(--board-dot-size, 1.25px));
+  background-position: var(--board-dot-offset-x, 0) var(--board-dot-offset-y, 0);
+  background-size: var(--board-dot-grid-size, 20px) var(--board-dot-grid-size, 20px);
+  opacity: 0.55;
+}
+
+:root[data-theme="dark"] .fosscalidraw-board-canvas--dotted .excalidraw::after {
+  opacity: 0.42;
+}

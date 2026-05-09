@@ -48,8 +48,28 @@ boardsRouter.get("/", asyncRoute(async (req, res) => {
   const user = (req as any).user;
   const boards = await Board.find({
     $or: [{ ownerEmail: user.email }, { "members.email": user.email }],
-  }).select("-scene").sort({ updatedAt: -1 });
-  res.json(boards);
+  })
+    .select("title updatedAt ownerEmail archived scene.elements scene.appState")
+    .sort({ updatedAt: -1 });
+
+  res.json(boards.map((board) => {
+    const data = board.toObject();
+    const scene = normalizeScene(data.scene);
+    return {
+      _id: data._id,
+      title: data.title,
+      updatedAt: data.updatedAt,
+      ownerEmail: data.ownerEmail,
+      archived: data.archived,
+      preview: {
+        elements: scene.elements.filter((element: any) => !element?.isDeleted).slice(0, 120),
+        appState: {
+          viewBackgroundColor: scene.appState.viewBackgroundColor,
+          fosscalidrawBackgroundStyle: scene.appState.fosscalidrawBackgroundStyle,
+        },
+      },
+    };
+  }));
 }));
 
 boardsRouter.post("/", asyncRoute(async (req, res) => {

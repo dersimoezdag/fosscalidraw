@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useSession } from "../auth/useSession";
 import { ThemeToggle } from "../theme/ThemeToggle";
+import { dottedBackgroundAppStateKey, type BoardBackgroundStyle } from "../collaboration/sceneSync";
 
 interface Board {
   _id: string;
@@ -10,6 +11,30 @@ interface Board {
   updatedAt: string;
   ownerEmail: string;
   archived?: boolean;
+  preview?: BoardPreviewScene;
+}
+
+interface BoardPreviewScene {
+  elements?: PreviewElement[];
+  appState?: Record<string, unknown>;
+}
+
+interface PreviewElement {
+  id?: string;
+  type?: string;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  angle?: number;
+  strokeColor?: string;
+  backgroundColor?: string;
+  fillStyle?: string;
+  strokeWidth?: number;
+  opacity?: number;
+  text?: string;
+  points?: [number, number][];
+  isDeleted?: boolean;
 }
 
 interface ContextMenuState {
@@ -232,14 +257,7 @@ export function Dashboard() {
                   {t("archived")}
                 </span>
               )}
-              <div style={{
-                height: "100px", background: "var(--color-bg)", borderRadius: "var(--radius-md)",
-                marginBottom: "0.75rem", display: "flex", alignItems: "center", justifyContent: "center"
-              }}>
-                <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-                  <path d="M6 26 L11 14 L16 20 L20 15 L26 26" stroke="#d4d1ca" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              </div>
+              <BoardPreview preview={b.preview} />
               <h3 style={{ fontSize: "0.9rem", fontWeight: 600, marginBottom: "0.25rem", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                 {b.title}
               </h3>
@@ -345,6 +363,124 @@ function getImportedBoardTitle(scene: any, fileName: string, fallback: string) {
 
   const fileTitle = fileName.replace(/\.excalidraw$/i, "").replace(/\.json$/i, "").trim();
   return fileTitle || fallback;
+}
+
+function BoardPreview({ preview }: { preview?: BoardPreviewScene }) {
+  const elements = (preview?.elements ?? []).filter((element) => !element.isDeleted);
+  const backgroundStyle = getPreviewBackgroundStyle(preview);
+  const bounds = getPreviewBounds(elements);
+  const viewBox = bounds
+    ? `${bounds.minX} ${bounds.minY} ${Math.max(bounds.width, 1)} ${Math.max(bounds.height, 1)}`
+    : "0 0 320 160";
+
+  return (
+    <div style={{
+      height: "100px",
+      background: getPreviewBackground(preview, backgroundStyle),
+      backgroundImage: backgroundStyle === "dotted"
+        ? "radial-gradient(circle, color-mix(in srgb, var(--color-text-muted) 42%, transparent) 1px, transparent 1px)"
+        : undefined,
+      backgroundSize: backgroundStyle === "dotted" ? "16px 16px" : undefined,
+      borderRadius: "var(--radius-md)",
+      marginBottom: "0.75rem",
+      overflow: "hidden",
+      border: "1px solid color-mix(in srgb, var(--color-border) 70%, transparent)",
+    }}>
+      {elements.length > 0 ? (
+        <svg width="100%" height="100%" viewBox={viewBox} preserveAspectRatio="xMidYMid meet">
+          {elements.map((element, index) => (
+            <PreviewShape key={element.id ?? index} element={element} />
+          ))}
+        </svg>
+      ) : (
+        <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+            <path d="M6 26 L11 14 L16 20 L20 15 L26 26" stroke="#d4d1ca" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PreviewShape({ element }: { element: PreviewElement }) {
+  const x = numberOr(element.x, 0);
+  const y = numberOr(element.y, 0);
+  const width = Math.max(numberOr(element.width, 1), 1);
+  const height = Math.max(numberOr(element.height, 1), 1);
+  const stroke = element.strokeColor || "#343a40";
+  const fill = getElementFill(element);
+  const strokeWidth = Math.max(numberOr(element.strokeWidth, 1.5), 1.5);
+  const opacity = Math.min(1, Math.max(0.12, numberOr(element.opacity, 100) / 100));
+  const rotation = element.angle ? `rotate(${element.angle * 180 / Math.PI} ${x + width / 2} ${y + height / 2})` : undefined;
+
+  if (element.type === "ellipse") {
+    return <ellipse cx={x + width / 2} cy={y + height / 2} rx={width / 2} ry={height / 2} fill={fill} stroke={stroke} strokeWidth={strokeWidth} opacity={opacity} transform={rotation} />;
+  }
+
+  if (element.type === "diamond") {
+    return <polygon points={`${x + width / 2},${y} ${x + width},${y + height / 2} ${x + width / 2},${y + height} ${x},${y + height / 2}`} fill={fill} stroke={stroke} strokeWidth={strokeWidth} opacity={opacity} transform={rotation} />;
+  }
+
+  if (element.type === "line" || element.type === "arrow" || element.type === "freedraw") {
+    const points = element.points?.length ? element.points : [[0, 0], [width, height]];
+    const d = points.map(([px, py], index) => `${index === 0 ? "M" : "L"} ${x + px} ${y + py}`).join(" ");
+    return <path d={d} fill="none" stroke={stroke} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" opacity={opacity} transform={rotation} />;
+  }
+
+  if (element.type === "text") {
+    return <text x={x} y={y + Math.min(height, 18)} fill={stroke} fontSize={Math.max(10, Math.min(18, height))} opacity={opacity}>{element.text}</text>;
+  }
+
+  return <rect x={x} y={y} width={width} height={height} rx={Math.min(8, width / 8, height / 8)} fill={fill} stroke={stroke} strokeWidth={strokeWidth} opacity={opacity} transform={rotation} />;
+}
+
+function getPreviewBounds(elements: PreviewElement[]) {
+  if (elements.length === 0) return null;
+
+  const boxes = elements.map((element) => {
+    const x = numberOr(element.x, 0);
+    const y = numberOr(element.y, 0);
+    return {
+      minX: x,
+      minY: y,
+      maxX: x + Math.max(numberOr(element.width, 1), 1),
+      maxY: y + Math.max(numberOr(element.height, 1), 1),
+    };
+  });
+
+  const minX = Math.min(...boxes.map((box) => box.minX));
+  const minY = Math.min(...boxes.map((box) => box.minY));
+  const maxX = Math.max(...boxes.map((box) => box.maxX));
+  const maxY = Math.max(...boxes.map((box) => box.maxY));
+  const padding = Math.max(24, Math.max(maxX - minX, maxY - minY) * 0.08);
+
+  return {
+    minX: minX - padding,
+    minY: minY - padding,
+    width: maxX - minX + padding * 2,
+    height: maxY - minY + padding * 2,
+  };
+}
+
+function getPreviewBackgroundStyle(preview?: BoardPreviewScene): BoardBackgroundStyle {
+  return preview?.appState?.[dottedBackgroundAppStateKey] === "dotted" ? "dotted" : "solid";
+}
+
+function getPreviewBackground(preview: BoardPreviewScene | undefined, style: BoardBackgroundStyle) {
+  const color = typeof preview?.appState?.viewBackgroundColor === "string" && preview.appState.viewBackgroundColor !== "transparent"
+    ? preview.appState.viewBackgroundColor
+    : "var(--color-bg)";
+  return style === "dotted" ? color : color;
+}
+
+function getElementFill(element: PreviewElement) {
+  if (!element.backgroundColor || element.backgroundColor === "transparent") return "none";
+  return element.backgroundColor;
+}
+
+function numberOr(value: unknown, fallback: number) {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
 function Modal({
