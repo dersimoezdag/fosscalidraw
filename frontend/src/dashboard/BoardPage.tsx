@@ -85,7 +85,6 @@ export function BoardPage() {
   const sceneSaveTimerRef = useRef<number | null>(null);
   const lastSceneJsonRef = useRef("");
   const { colorScheme } = useColorScheme();
-  const colorSchemeRef = useRef(colorScheme);
   const [title, setTitle] = useState(t("boardUntitled"));
   const [initialData, setInitialData] = useState<ExcalidrawInitialDataState | null>(null);
   const [sceneReady, setSceneReady] = useState(false);
@@ -106,14 +105,6 @@ export function BoardPage() {
   const needsGuestName = access?.role === "guest" && canEdit && !guestName.trim();
   const activeCanEdit = canEdit && !needsGuestName;
   const canManage = access?.canManage ?? false;
-
-  useEffect(() => {
-    colorSchemeRef.current = colorScheme;
-    excalidrawApiRef.current?.updateScene({
-      appState: { theme: colorScheme },
-      captureUpdate: CaptureUpdateAction.NEVER,
-    });
-  }, [colorScheme]);
 
   const saveScene = useCallback((scene: PersistedScene) => {
     if (!id) return;
@@ -147,7 +138,7 @@ export function BoardPage() {
     api.addFiles(Object.values(restored.files));
     api.updateScene({
       elements: restored.elements,
-      appState: { ...restored.appState, theme: colorSchemeRef.current },
+      appState: restored.appState,
       captureUpdate: CaptureUpdateAction.NEVER,
     });
     window.setTimeout(() => {
@@ -257,7 +248,7 @@ export function BoardPage() {
           if (isGuestEditor && !collaboratorName) {
             const scene = board.scene ?? {};
             lastSceneJsonRef.current = JSON.stringify(scene);
-            setInitialData({ ...scene, appState: { ...scene.appState, theme: colorSchemeRef.current, viewModeEnabled: true } });
+            setInitialData({ ...scene, appState: { ...scene.appState, viewModeEnabled: true } });
             setSceneReady(true);
             setGuestNameDialogOpen(true);
             return;
@@ -313,7 +304,7 @@ export function BoardPage() {
             }
 
             lastSceneJsonRef.current = JSON.stringify(scene);
-            setInitialData({ ...scene, appState: { ...scene.appState, theme: colorSchemeRef.current, viewModeEnabled: false } });
+            setInitialData({ ...scene, appState: { ...scene.appState, viewModeEnabled: false } });
             setSceneReady(true);
           });
           return;
@@ -321,7 +312,7 @@ export function BoardPage() {
 
         const scene = board.scene ?? {};
         lastSceneJsonRef.current = JSON.stringify(scene);
-        setInitialData({ ...scene, appState: { ...scene.appState, theme: colorSchemeRef.current, viewModeEnabled: true } });
+        setInitialData({ ...scene, appState: { ...scene.appState, viewModeEnabled: true } });
         setSceneReady(true);
       })
       .catch(() => navigate("/"));
@@ -645,6 +636,7 @@ export function BoardPage() {
             key={activeCanEdit ? "editable" : "readonly"}
             UIOptions={excalidrawUiOptions}
             initialData={initialData}
+            theme={colorScheme}
             isCollaborating={activeCanEdit}
             onChange={handleSceneChange}
             onPointerDown={handlePointerDown}
@@ -652,10 +644,6 @@ export function BoardPage() {
             onPointerUpdate={handlePointerUpdate}
             excalidrawAPI={(api) => {
               excalidrawApiRef.current = api;
-              api.updateScene({
-                appState: { theme: colorScheme },
-                captureUpdate: CaptureUpdateAction.NEVER,
-              });
               const pendingScene = pendingRemoteSceneRef.current;
               if (pendingScene) {
                 pendingRemoteSceneRef.current = null;
