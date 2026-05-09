@@ -52,9 +52,19 @@ interface PersistedScene {
   files?: BinaryFiles;
 }
 
+interface ActiveUser {
+  clientId: number;
+  id?: string;
+  name: string;
+  email?: string;
+  color?: { background: string; stroke: string };
+  isCurrent: boolean;
+}
+
 const collabOrigin = "fosscalidraw-local";
 const scenePayloadKey = "payload";
 const sceneRevisionKey = "revision";
+const kickKeyPrefix = "kick:";
 
 export function BoardPage() {
   const { t } = useTranslation();
@@ -72,10 +82,15 @@ export function BoardPage() {
   const sceneSyncTimerRef = useRef<number | null>(null);
   const sceneSaveTimerRef = useRef<number | null>(null);
   const lastSceneJsonRef = useRef("");
+  const [colorScheme, setColorScheme] = useState<"light" | "dark">(() =>
+    window.localStorage.getItem("fosscalidraw.colorScheme") === "dark" ? "dark" : "light"
+  );
   const [title, setTitle] = useState(t("boardUntitled"));
   const [initialData, setInitialData] = useState<ExcalidrawInitialDataState | null>(null);
   const [sceneReady, setSceneReady] = useState(false);
   const [collaborators, setCollaborators] = useState(0);
+  const [activeUsers, setActiveUsers] = useState<ActiveUser[]>([]);
+  const [activeUsersOpen, setActiveUsersOpen] = useState(false);
   const [access, setAccess] = useState<BoardAccess | null>(null);
   const [publicAccess, setPublicAccess] = useState<PublicAccess>("private");
   const [shareOpen, setShareOpen] = useState(false);
@@ -90,6 +105,15 @@ export function BoardPage() {
   const needsGuestName = access?.role === "guest" && canEdit && !guestName.trim();
   const activeCanEdit = canEdit && !needsGuestName;
   const canManage = access?.canManage ?? false;
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = colorScheme;
+    window.localStorage.setItem("fosscalidraw.colorScheme", colorScheme);
+    excalidrawApiRef.current?.updateScene({
+      appState: { theme: colorScheme },
+      captureUpdate: CaptureUpdateAction.NEVER,
+    });
+  }, [colorScheme]);
 
   const saveScene = useCallback((scene: PersistedScene) => {
     if (!id) return;
@@ -162,21 +186,37 @@ export function BoardPage() {
     }
 
     const collaborators = new Map<SocketId, Collaborator>();
+    const activeUsers: ActiveUser[] = [];
 
     collab.provider.awareness.getStates().forEach((state: any, clientId: number) => {
-      if (clientId === collab.provider.awareness.clientID) return;
+      const userColor = state.color ?? getCollaboratorColor(clientId);
+      const userName = state.username || "Guest";
+      const isCurrent = clientId === collab.provider.awareness.clientID;
+
+      activeUsers.push({
+        clientId,
+        id: state.id,
+        name: userName,
+        email: state.email,
+        color: userColor,
+        isCurrent,
+      });
+
+      if (isCurrent) return;
       collaborators.set(String(clientId) as SocketId, {
         pointer: state.pointer,
         button: state.button,
         selectedElementIds: state.selectedElementIds,
-        username: state.username,
-        color: state.color,
+        username: userName,
+        color: userColor,
         id: state.id,
         socketId: String(clientId) as SocketId,
       });
     });
 
-    setCollaborators(collab.provider.awareness.getStates().size);
+    activeUsers.sort((a, b) => Number(b.isCurrent) - Number(a.isCurrent) || a.name.localeCompare(b.name));
+    setActiveUsers(activeUsers);
+    setCollaborators(activeUsers.length);
     api?.updateScene({
       appState: { collaborators },
       captureUpdate: CaptureUpdateAction.NEVER,
@@ -227,6 +267,7 @@ export function BoardPage() {
           providerRef.current = collab;
           collab.provider.awareness.setLocalStateField("username", collaboratorName);
           collab.provider.awareness.setLocalStateField("id", session?.user?.id ?? `guest-${collab.provider.awareness.clientID}`);
+          collab.provider.awareness.setLocalStateField("email", session?.user?.email);
           collab.provider.awareness.setLocalStateField("color", getCollaboratorColor(collab.provider.awareness.clientID));
           collab.provider.awareness.on("change", (changes: any) => {
             const changedClients = [
@@ -244,6 +285,12 @@ export function BoardPage() {
 
           collab.yScene.observe((event) => {
             if (event.transaction.origin === collabOrigin || !collab) return;
+            if (isKicked(collab)) {
+              collab.provider.destroy();
+              providerRef.current = null;
+              navigate("/");
+              return;
+            }
             const scene = readYjsScene(collab);
             const sceneJson = JSON.stringify(scene);
             if (sceneJson === lastSceneJsonRef.current) return;
@@ -346,6 +393,29 @@ export function BoardPage() {
 
     setInviteEmail("");
     setShareStatus(t("memberInvited"));
+  }
+
+  async function removeActiveUser(user: ActiveUser) {
+    if (!canManage || user.isCurrent) return;
+
+    const collab = providerRef.current;
+    const kickId = user.id ?? String(user.clientId);
+    if (collab) {
+      collab.yScene.set(`${kickKeyPrefix}${kickId}`, Date.now());
+    }
+
+    if (user.email) {
+      await fetch(`/api/boards/${id}/members/${encodeURIComponent(user.email)}`, {
+        method: "DELETE",
+        credentials: "include",
+      }).catch(() => undefined);
+    }
+
+    setActiveUsersOpen(false);
+  }
+
+  function toggleColorScheme() {
+    setColorScheme((current) => current === "dark" ? "light" : "dark");
   }
 
   function submitGuestName() {
@@ -502,9 +572,78 @@ export function BoardPage() {
             fontSize: "0.9rem", outline: "none", width: "200px"
           }}
         />
-        <span style={{ marginLeft: "auto", fontSize: "0.8rem", color: "var(--color-text-muted)" }}>
-          {activeCanEdit ? t("boardOnline", { count: collaborators }) : t("boardViewOnly")}
-        </span>
+        <div style={{ marginLeft: "auto", position: "relative" }}>
+          <button
+            className="btn-ghost"
+            onClick={() => setActiveUsersOpen((open) => !open)}
+            aria-expanded={activeUsersOpen}
+            aria-label={t("activeUsers")}
+            style={{ padding: "0.35rem 0.65rem", color: "var(--color-text-muted)" }}
+          >
+            {activeCanEdit ? t("boardOnline", { count: collaborators }) : t("boardViewOnly")}
+          </button>
+          {activeUsersOpen && (
+            <div
+              style={{
+                position: "absolute", right: 0, top: "calc(100% + 0.45rem)",
+                width: "260px", background: "var(--color-surface-raised)",
+                border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)",
+                boxShadow: "var(--shadow-md)", padding: "0.45rem", zIndex: 30,
+                display: "grid", gap: "0.25rem"
+              }}
+            >
+              <div style={{ padding: "0.35rem 0.45rem", fontSize: "0.78rem", color: "var(--color-text-muted)" }}>
+                {t("activeUsers")}
+              </div>
+              {activeUsers.length === 0 ? (
+                <div style={{ padding: "0.45rem", fontSize: "0.85rem", color: "var(--color-text-muted)" }}>
+                  {t("noActiveUsers")}
+                </div>
+              ) : activeUsers.map((user) => (
+                <div
+                  key={user.clientId}
+                  style={{
+                    display: "grid", gridTemplateColumns: "1.5rem 1fr auto", alignItems: "center",
+                    gap: "0.5rem", padding: "0.4rem 0.45rem", borderRadius: "var(--radius-md)"
+                  }}
+                >
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      width: "0.75rem", height: "0.75rem", borderRadius: "999px",
+                      background: user.color?.background ?? "var(--color-primary)",
+                      border: `1px solid ${user.color?.stroke ?? "var(--color-primary)"}`
+                    }}
+                  />
+                  <span style={{ minWidth: 0, display: "grid" }}>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: "0.88rem" }}>
+                      {user.name}{user.isCurrent ? ` ${t("youSuffix")}` : ""}
+                    </span>
+                    {user.email && (
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: "0.74rem", color: "var(--color-text-muted)" }}>
+                        {user.email}
+                      </span>
+                    )}
+                  </span>
+                  {canManage && !user.isCurrent && (
+                    <button className="btn-ghost" onClick={() => removeActiveUser(user)} style={{ padding: "0.3rem 0.45rem" }}>
+                      {t("removeUser")}
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <button
+          className="btn-ghost"
+          onClick={toggleColorScheme}
+          aria-label={colorScheme === "dark" ? t("useLightMode") : t("useDarkMode")}
+          title={colorScheme === "dark" ? t("useLightMode") : t("useDarkMode")}
+          style={{ padding: "0.35rem 0.55rem", color: "var(--color-text)" }}
+        >
+          {colorScheme === "dark" ? "Light" : "Dark"}
+        </button>
         {canManage && (
           <button className="btn-primary" onClick={() => { setShareOpen(true); setShareStatus(""); }}>
             {t("share")}
@@ -557,7 +696,7 @@ export function BoardPage() {
           aria-label={t("shareBoard")}
           onClick={() => setShareOpen(false)}
           style={{
-            position: "fixed", inset: 0, background: "rgba(0,0,0,0.24)",
+            position: "fixed", inset: 0, background: "var(--color-overlay)",
             display: "flex", alignItems: "center", justifyContent: "center",
             padding: "1rem", zIndex: 1000
           }}
@@ -599,7 +738,7 @@ export function BoardPage() {
                 onChange={(e) => updatePublicAccess(e.target.value as PublicAccess)}
                 style={{
                   border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)",
-                  padding: "0.55rem 0.7rem", background: "white"
+                  padding: "0.55rem 0.7rem", background: "var(--color-control-bg)"
                 }}
               >
                 <option value="private">{t("guestPrivate")}</option>
@@ -626,7 +765,7 @@ export function BoardPage() {
                   onChange={(e) => setInviteRole(e.target.value as "editor" | "viewer")}
                   style={{
                     border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)",
-                    padding: "0.55rem 0.7rem", background: "white"
+                    padding: "0.55rem 0.7rem", background: "var(--color-control-bg)"
                   }}
                 >
                   <option value="editor">{t("editor")}</option>
@@ -651,7 +790,7 @@ export function BoardPage() {
           aria-modal="true"
           aria-label={t("guestNameTitle")}
           style={{
-            position: "fixed", inset: 0, background: "rgba(0,0,0,0.32)",
+            position: "fixed", inset: 0, background: "var(--color-overlay)",
             display: "flex", alignItems: "center", justifyContent: "center",
             padding: "1rem", zIndex: 1100
           }}
@@ -729,6 +868,15 @@ function readYjsScenePayload(collab: CollabProvider): PersistedScene {
     appState: cloneJson(collab.yScene.get("appState") ?? {}),
     files: cloneJson(collab.yScene.get("files") ?? {}),
   };
+}
+
+function isKicked(collab: CollabProvider) {
+  const localState: any = collab.provider.awareness.getLocalState();
+  const localId = localState?.id;
+  return Boolean(
+    (localId && collab.yScene.has(`${kickKeyPrefix}${localId}`)) ||
+    collab.yScene.has(`${kickKeyPrefix}${collab.provider.awareness.clientID}`)
+  );
 }
 
 function serializeScene(scene: PersistedScene) {
