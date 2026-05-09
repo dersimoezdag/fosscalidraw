@@ -1,3 +1,6 @@
+# Docker Compose automatically uses .env for ${...} interpolation.
+# Copy .env.production.example to .env on the server, edit it, then run:
+# docker compose -f docker-compose.prod.example.yml up -d
 services:
   mongo:
     image: mongo:7
@@ -6,8 +9,8 @@ services:
       - mongo_data:/data/db
     environment:
       MONGO_INITDB_DATABASE: fosscalidraw
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME:-fosscalidraw}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-change-me-local-mongo-password}
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME:?Set MONGO_ROOT_USERNAME in .env}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?Set MONGO_ROOT_PASSWORD in .env}
     healthcheck:
       test: ["CMD-SHELL", "mongosh --username \"$${MONGO_INITDB_ROOT_USERNAME}\" --password \"$${MONGO_INITDB_ROOT_PASSWORD}\" --authenticationDatabase admin --eval \"db.adminCommand('ping')\""]
       interval: 10s
@@ -15,31 +18,27 @@ services:
       retries: 5
 
   backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    image: dersimoezdag/fosscalidraw-backend:0.1.0
     restart: unless-stopped
     depends_on:
       mongo:
         condition: service_healthy
-    env_file: .env
+    env_file: ${ENV_FILE:-.env}
     environment:
       BACKEND_PORT: ${BACKEND_PORT:-3001}
-      MONGODB_URI: mongodb://${MONGO_ROOT_USERNAME:-fosscalidraw}:${MONGO_ROOT_PASSWORD:-change-me-local-mongo-password}@mongo:27017/fosscalidraw?authSource=admin
-    ports:
-      - "${BACKEND_PORT:-3001}:${BACKEND_PORT:-3001}"
+      MONGODB_URI: mongodb://${MONGO_ROOT_USERNAME}:${MONGO_ROOT_PASSWORD}@mongo:27017/fosscalidraw?authSource=admin
+    expose:
+      - "${BACKEND_PORT:-3001}"
 
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
+    image: dersimoezdag/fosscalidraw-frontend:0.1.0
     restart: unless-stopped
     depends_on:
       - backend
     environment:
       BACKEND_PORT: ${BACKEND_PORT:-3001}
     ports:
-      - "${FRONTEND_PORT:-3000}:80"
+      - "127.0.0.1:${FRONTEND_PORT:-3000}:80"
 
 volumes:
   mongo_data:

@@ -100,9 +100,47 @@ AUTH_DEV_OIDC=false
 VITE_DEV_OIDC=false
 ```
 
+### Production Compose With Published Images
+
+After publishing the images to Docker Hub, use `docker-compose.prod.example.yml` as the deployment
+template. It uses:
+
+- `dersimoezdag/fosscalidraw-backend:0.1.0`
+- `dersimoezdag/fosscalidraw-frontend:0.1.0`
+- `mongo:7`
+
+Prepare the production env file:
+
+```bash
+cp .env.production.example .env
+# edit .env and set APP_URL, AUTH_SECRET, Mongo password, ports, and auth provider credentials
+```
+
+Start the stack:
+
+```bash
+docker compose -f docker-compose.prod.example.yml up -d
+```
+
+Docker Compose uses `.env` automatically for `${...}` interpolation. Keep the real `.env` on the
+server only and do not commit it.
+
+The production example binds the frontend only to `127.0.0.1:${FRONTEND_PORT:-3000}`, so your host
+reverse proxy can serve HTTPS publicly while the backend remains private inside the Compose network.
+`BACKEND_PORT` is the internal container port used between frontend and backend; `FRONTEND_PORT` is
+the local host port your reverse proxy connects to.
+
+To upgrade later, change the image tags in `docker-compose.prod.example.yml` and run:
+
+```bash
+docker compose -f docker-compose.prod.example.yml pull
+docker compose -f docker-compose.prod.example.yml up -d
+```
+
 ### Example: Host Nginx Reverse Proxy
 
 This example assumes Docker Compose publishes the frontend container on `127.0.0.1:3000`.
+If you set `FRONTEND_PORT=7300`, replace `3000` with `7300` below.
 Use Certbot, your platform, or your own certificate automation for the TLS files.
 
 ```nginx

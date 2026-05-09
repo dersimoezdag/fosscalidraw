@@ -7,5 +7,7 @@ RUN npm run build
 
 FROM nginx:alpine
 COPY --from=builder /app/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY nginx.conf /etc/nginx/templates/default.conf.template
+ENV BACKEND_PORT=3001
+ENV NGINX_ENVSUBST_FILTER="^BACKEND_PORT$"
 EXPOSE 80
