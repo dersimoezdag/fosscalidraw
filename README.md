@@ -105,8 +105,8 @@ VITE_DEV_OIDC=false
 After publishing the images to Docker Hub, use `docker-compose.prod.example.yml` as the deployment
 template. It uses:
 
-- `dersimoezdag/fosscalidraw-backend:0.1.6`
-- `dersimoezdag/fosscalidraw-frontend:0.1.6`
+- `dersimoezdag/fosscalidraw-backend:0.1.7`
+- `dersimoezdag/fosscalidraw-frontend:0.1.7`
 - `mongo:7`
 
 Prepare the production env file:
