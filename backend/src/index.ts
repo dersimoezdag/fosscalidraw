@@ -39,6 +39,12 @@ app.use("/api/boards", boardsRouter);
 // Health
 app.get("/health", (_req, res) => res.json({ status: "ok" }));
 
+app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error(err);
+  if (res.headersSent) return;
+  res.status(500).json({ error: "Internal server error" });
+});
+
 const httpServer = createServer(app);
 
 // Yjs WebSocket server (replaces excalidraw-room)

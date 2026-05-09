@@ -1,11 +1,17 @@
-import { Router } from "express";
+import { NextFunction, Request, Response, Router } from "express";
 import { Board } from "./boards.model.js";
 import { optionalAuth, requireAuth } from "../middleware/authGuard.js";
 import { getOrSetGuestId } from "../guests/guestIdentity.js";
 
 export const boardsRouter = Router();
 
-boardsRouter.get("/:id", optionalAuth, async (req, res) => {
+type AsyncRouteHandler = (req: Request, res: Response, next: NextFunction) => Promise<void>;
+
+const asyncRoute = (handler: AsyncRouteHandler) => (req: Request, res: Response, next: NextFunction) => {
+  Promise.resolve(handler(req, res, next)).catch(next);
+};
+
+boardsRouter.get("/:id", optionalAuth, asyncRoute(async (req, res) => {
   const board = await Board.findById(req.params.id);
   if (!board) { res.status(404).json({ error: "Not found" }); return; }
 
@@ -22,9 +28,9 @@ boardsRouter.get("/:id", optionalAuth, async (req, res) => {
       guestId: access.role === "guest" ? guestId : undefined,
     },
   });
-});
+}));
 
-boardsRouter.patch("/:id/scene", optionalAuth, async (req, res) => {
+boardsRouter.patch("/:id/scene", optionalAuth, asyncRoute(async (req, res) => {
   const board = await Board.findById(req.params.id);
   if (!board) { res.status(404).json({ error: "Not found" }); return; }
 
@@ -34,19 +40,19 @@ boardsRouter.patch("/:id/scene", optionalAuth, async (req, res) => {
   board.scene = normalizeScene(req.body.scene);
   await board.save();
   res.json({ ok: true, updatedAt: board.updatedAt });
-});
+}));
 
 boardsRouter.use(requireAuth);
 
-boardsRouter.get("/", async (req, res) => {
+boardsRouter.get("/", asyncRoute(async (req, res) => {
   const user = (req as any).user;
   const boards = await Board.find({
     $or: [{ ownerEmail: user.email }, { "members.email": user.email }],
   }).select("-scene").sort({ updatedAt: -1 });
   res.json(boards);
-});
+}));
 
-boardsRouter.post("/", async (req, res) => {
+boardsRouter.post("/", asyncRoute(async (req, res) => {
   const user = (req as any).user;
   const board = await Board.create({
     title: req.body.title ?? "Untitled Board",
@@ -60,9 +66,9 @@ boardsRouter.post("/", async (req, res) => {
     scene: { elements: [], appState: {}, files: {} },
   });
   res.status(201).json(board);
-});
+}));
 
-boardsRouter.patch("/:id", async (req, res) => {
+boardsRouter.patch("/:id", asyncRoute(async (req, res) => {
   const board = await Board.findById(req.params.id);
   if (!board) { res.status(404).json({ error: "Not found" }); return; }
 
@@ -93,9 +99,9 @@ boardsRouter.patch("/:id", async (req, res) => {
     { new: true }
   );
   res.json(updatedBoard);
-});
+}));
 
-boardsRouter.delete("/:id", async (req, res) => {
+boardsRouter.delete("/:id", asyncRoute(async (req, res) => {
   const board = await Board.findById(req.params.id);
   if (!board) { res.status(404).json({ error: "Not found" }); return; }
   if (!getBoardAccess(board, (req as any).user).canManage) {
@@ -104,9 +110,9 @@ boardsRouter.delete("/:id", async (req, res) => {
   }
   await Board.findByIdAndDelete(req.params.id);
   res.status(204).send();
-});
+}));
 
-boardsRouter.patch("/:id/share", async (req, res) => {
+boardsRouter.patch("/:id/share", asyncRoute(async (req, res) => {
   const board = await Board.findById(req.params.id);
   if (!board) { res.status(404).json({ error: "Not found" }); return; }
   if (!getBoardAccess(board, (req as any).user).canManage) {
@@ -120,9 +126,9 @@ boardsRouter.patch("/:id/share", async (req, res) => {
   board.publicAccess = publicAccess;
   await board.save();
   res.json(board);
-});
+}));
 
-boardsRouter.post("/:id/remove-active-user", async (req, res) => {
+boardsRouter.post("/:id/remove-active-user", asyncRoute(async (req, res) => {
   const existingBoard = await Board.findById(req.params.id);
   if (!existingBoard) { res.status(404).json({ error: "Not found" }); return; }
   if (!getBoardAccess(existingBoard, (req as any).user).canManage) {
@@ -153,9 +159,9 @@ boardsRouter.post("/:id/remove-active-user", async (req, res) => {
     { new: true }
   );
   res.json(board);
-});
+}));
 
-boardsRouter.post("/:id/members", async (req, res) => {
+boardsRouter.post("/:id/members", asyncRoute(async (req, res) => {
   const email = typeof req.body.email === "string" ? req.body.email.trim().toLowerCase() : "";
   const { role } = req.body;
   const existingBoard = await Board.findById(req.params.id);
@@ -175,9 +181,9 @@ boardsRouter.post("/:id/members", async (req, res) => {
     { new: true }
   );
   res.json(board);
-});
+}));
 
-boardsRouter.delete("/:id/members/:email", async (req, res) => {
+boardsRouter.delete("/:id/members/:email", asyncRoute(async (req, res) => {
   const existingBoard = await Board.findById(req.params.id);
   if (!existingBoard) { res.status(404).json({ error: "Not found" }); return; }
   if (!getBoardAccess(existingBoard, (req as any).user).canManage) {
@@ -191,7 +197,7 @@ boardsRouter.delete("/:id/members/:email", async (req, res) => {
     { new: true }
   );
   res.json(board);
-});
+}));
 
 function getBoardAccess(board: any, user?: any, guestId?: string | null) {
   const publicAccess = board.publicAccess ?? "private";
