@@ -5,6 +5,8 @@ export interface CollabProvider {
   ydoc: Y.Doc;
   provider: WebsocketProvider;
   yScene: Y.Map<any>;
+  yElements: Y.Map<any>;
+  yFiles: Y.Map<any>;
 }
 
 export function createCollabProvider(boardId: string): CollabProvider {
@@ -21,6 +23,8 @@ export function createCollabProvider(boardId: string): CollabProvider {
   );
 
   const yScene = ydoc.getMap<any>("excalidraw-scene");
+  const yElements = ydoc.getMap<any>("excalidraw-elements");
+  const yFiles = ydoc.getMap<any>("excalidraw-files");
 
-  return { ydoc, provider, yScene };
+  return { ydoc, provider, yScene, yElements, yFiles };
 }

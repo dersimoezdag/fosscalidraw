@@ -171,9 +171,8 @@ export function BoardPage() {
 
   const writeYjsScene = useCallback((collab: CollabProvider, scene: PersistedScene) => {
     const nextScene = cloneScene(scene);
-    const payload = serializeScene(nextScene);
     collab.ydoc.transact(() => {
-      collab.yScene.set(scenePayloadKey, payload);
+      writeYjsScenePayload(collab, nextScene);
       collab.yScene.set(sceneRevisionKey, `${Date.now()}-${Math.random().toString(36).slice(2)}`);
     }, collabOrigin);
   }, []);
@@ -302,7 +301,7 @@ export function BoardPage() {
             if (collab) updateRemoteCollaborators(collab);
           });
 
-          collab.yScene.observe((event) => {
+          const handleRemoteSceneUpdate = (event: { transaction: { origin: unknown } }) => {
             if (event.transaction.origin === collabOrigin || !collab) return;
             if (isKicked(collab)) {
               collab.provider.destroy();
@@ -314,13 +313,22 @@ export function BoardPage() {
             const sceneJson = JSON.stringify(scene);
             if (sceneJson === lastSceneJsonRef.current) return;
             lastSceneJsonRef.current = sceneJson;
+            if (isPointerDownRef.current) {
+              pendingRemoteSceneRef.current = { scene, editable: true };
+              return;
+            }
             applyScene(scene, true);
-          });
+          };
+          collab.yScene.observe(handleRemoteSceneUpdate);
+          collab.yElements.observe(handleRemoteSceneUpdate);
+          collab.yFiles.observe(handleRemoteSceneUpdate);
 
           collab.provider.on("sync", (synced: boolean) => {
             if (!synced || cancelled || !collab) return;
             const remoteScene = readYjsScene(collab);
             const hasRemoteScene =
+              collab.yElements.size > 0 ||
+              collab.yFiles.size > 0 ||
               collab.yScene.has(scenePayloadKey) ||
               collab.yScene.has("elements") ||
               collab.yScene.has("appState") ||
@@ -546,6 +554,15 @@ export function BoardPage() {
     );
   }
 
+  function flushPendingRemoteScene() {
+    if (!pendingRemoteSceneRef.current || isPointerDownRef.current) return;
+
+    const pendingScene = pendingRemoteSceneRef.current;
+    pendingRemoteSceneRef.current = null;
+    const collab = providerRef.current;
+    applyScene(collab ? readYjsScene(collab) : pendingScene.scene, pendingScene.editable);
+  }
+
   function flushPendingCollaboratorUpdate() {
     const pendingCollab = pendingCollaboratorUpdateRef.current;
     pendingCollaboratorUpdateRef.current = null;
@@ -561,6 +578,7 @@ export function BoardPage() {
   function handlePointerUp() {
     isPointerDownRef.current = false;
     flushPendingSceneSync();
+    flushPendingRemoteScene();
     flushPendingCollaboratorUpdate();
   }
 
@@ -582,6 +600,7 @@ export function BoardPage() {
 
     if (payload.button === "up") {
       flushPendingSceneSync();
+      flushPendingRemoteScene();
       flushPendingCollaboratorUpdate();
     }
   }
@@ -897,6 +916,14 @@ function cloneScene(scene: PersistedScene): PersistedScene {
 }
 
 function readYjsScenePayload(collab: CollabProvider): PersistedScene {
+  if (collab.yElements.size > 0 || collab.yFiles.size > 0) {
+    return {
+      elements: orderElements(Array.from(collab.yElements.values())),
+      appState: {},
+      files: Object.fromEntries(collab.yFiles.entries()) as BinaryFiles,
+    };
+  }
+
   const payload = collab.yScene.get(scenePayloadKey);
   if (typeof payload === "string") {
     try {
@@ -911,6 +938,24 @@ function readYjsScenePayload(collab: CollabProvider): PersistedScene {
     appState: pickPersistedAppState(collab.yScene.get("appState") ?? {}),
     files: cloneJson(collab.yScene.get("files") ?? {}),
   };
+}
+
+function writeYjsScenePayload(collab: CollabProvider, scene: PersistedScene) {
+  for (const element of scene.elements ?? []) {
+    const currentElement = collab.yElements.get(element.id);
+    if (shouldReplaceElement(currentElement, element)) {
+      collab.yElements.set(element.id, cloneJson(element));
+    }
+  }
+
+  Object.entries(scene.files ?? {}).forEach(([fileId, file]) => {
+    collab.yFiles.set(fileId, cloneJson(file));
+  });
+
+  collab.yScene.delete(scenePayloadKey);
+  collab.yScene.delete("elements");
+  collab.yScene.delete("appState");
+  collab.yScene.delete("files");
 }
 
 function getYjsSceneUpdatedAt(collab: CollabProvider) {
@@ -939,14 +984,30 @@ function isKicked(collab: CollabProvider) {
   );
 }
 
-function serializeScene(scene: PersistedScene) {
-  return JSON.stringify(cloneScene(scene));
-}
-
 function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
 function pickPersistedAppState(_appState: Partial<AppState>): PersistedScene["appState"] {
   return {};
+}
+
+function orderElements(elements: OrderedExcalidrawElement[]) {
+  return elements.sort((a, b) => {
+    const aIndex = "index" in a ? String(a.index) : "";
+    const bIndex = "index" in b ? String(b.index) : "";
+    if (aIndex && bIndex && aIndex !== bIndex) return aIndex.localeCompare(bIndex);
+    return a.id.localeCompare(b.id);
+  });
+}
+
+function shouldReplaceElement(
+  currentElement: OrderedExcalidrawElement | undefined,
+  nextElement: OrderedExcalidrawElement
+) {
+  if (!currentElement) return true;
+  const currentVersion = Number(currentElement.version ?? 0);
+  const nextVersion = Number(nextElement.version ?? 0);
+  if (nextVersion !== currentVersion) return nextVersion > currentVersion;
+  return Number(nextElement.versionNonce ?? 0) !== Number(currentElement.versionNonce ?? 0);
 }
