@@ -42,15 +42,15 @@ export function initYjsServer(httpServer: Server) {
     const boardId = match[1];
 
     const session = getDevOidcSession(req as any) ?? await getSession(req as any, authConfig).catch(() => null);
-    if (!session?.user) { socket.destroy(); return; }
 
     const board = await Board.findById(boardId).catch(() => null);
     if (!board) { socket.destroy(); return; }
 
-    const email = session.user.email!;
+    const email = session?.user?.email;
     const hasAccess =
+      board.publicAccess === "edit" ||
       board.ownerEmail === email ||
-      board.members.some((m: any) => m.email === email);
+      board.members.some((m: any) => m.email === email && m.role === "editor");
 
     if (!hasAccess) { socket.destroy(); return; }
 

@@ -5,6 +5,7 @@ export interface IBoard extends Document {
   ownerId: string;
   ownerEmail: string;
   members: { email: string; role: "editor" | "viewer" }[];
+  publicAccess: "private" | "view" | "edit";
   createdAt: Date;
   updatedAt: Date;
 }
@@ -20,6 +21,11 @@ const BoardSchema = new Schema<IBoard>(
         role: { type: String, enum: ["editor", "viewer"], default: "editor" },
       },
     ],
+    publicAccess: {
+      type: String,
+      enum: ["private", "view", "edit"],
+      default: "private",
+    },
   },
   { timestamps: true }
 );

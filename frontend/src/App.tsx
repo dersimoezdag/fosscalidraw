@@ -20,7 +20,7 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/" element={session ? <Dashboard /> : <Navigate to="/login" replace />} />
-        <Route path="/board/:id" element={session ? <BoardPage /> : <Navigate to="/login" replace />} />
+        <Route path="/board/:id" element={<BoardPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

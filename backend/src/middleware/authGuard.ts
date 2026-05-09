@@ -12,3 +12,11 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   (req as any).user = session.user;
   next();
 }
+
+export async function optionalAuth(req: Request, _res: Response, next: NextFunction) {
+  const session = getDevOidcSession(req) ?? await getSession(req, authConfig).catch(() => null);
+  if (session?.user) {
+    (req as any).user = session.user;
+  }
+  next();
+}
