@@ -93,6 +93,8 @@ export function BoardPage() {
   const sceneSaveTimerRef = useRef<number | null>(null);
   const lastSceneJsonRef = useRef("");
   const lastSceneRef = useRef<PersistedScene | null>(null);
+  const backendSaveInFlightRef = useRef(false);
+  const queuedBackendSaveRef = useRef<{ scene: PersistedScene; keepalive: boolean } | null>(null);
   const backgroundStyleRef = useRef<BoardBackgroundStyle>("solid");
   const titleInputRef = useRef<HTMLInputElement | null>(null);
   const { colorScheme } = useColorScheme();
@@ -124,17 +126,37 @@ export function BoardPage() {
 
   const persistScene = useCallback((scene: PersistedScene, keepalive = false) => {
     if (!id) return;
-    return persistBoardScene(id, scene, keepalive);
+
+    if (keepalive) {
+      void persistBoardScene(id, scene, true);
+      return;
+    }
+
+    if (backendSaveInFlightRef.current) {
+      queuedBackendSaveRef.current = { scene, keepalive: false };
+      return;
+    }
+
+    backendSaveInFlightRef.current = true;
+    void persistBoardScene(id, scene)
+      .finally(() => {
+        backendSaveInFlightRef.current = false;
+        const queuedSave = queuedBackendSaveRef.current;
+        queuedBackendSaveRef.current = null;
+        if (queuedSave) {
+          persistScene(queuedSave.scene, queuedSave.keepalive);
+        }
+      });
   }, [id]);
 
-  const saveScene = useCallback((scene: PersistedScene, immediate = false) => {
+  const saveScene = useCallback((scene: PersistedScene, immediate = false, keepalive = false) => {
     if (!id) return;
     if (sceneSaveTimerRef.current) {
       window.clearTimeout(sceneSaveTimerRef.current);
       sceneSaveTimerRef.current = null;
     }
     if (immediate) {
-      void persistScene(scene, true);
+      void persistScene(scene, keepalive);
       return;
     }
     sceneSaveTimerRef.current = window.setTimeout(() => {
@@ -348,7 +370,7 @@ export function BoardPage() {
     const flushBeforeUnload = () => {
       flushPendingSceneSync();
       if (lastSceneRef.current) {
-        saveScene(lastSceneRef.current, true);
+        saveScene(lastSceneRef.current, true, true);
       }
     };
 
