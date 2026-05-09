@@ -4,6 +4,17 @@ import { Excalidraw } from "@excalidraw/excalidraw";
 import "@excalidraw/excalidraw/index.css";
 import { createCollabProvider, CollabProvider } from "../collaboration/CollabProvider";
 
+const excalidrawUiOptions = {
+  canvasActions: {
+    export: { saveFileToDisk: true },
+    loadScene: true,
+    saveAsImage: true,
+    clearCanvas: true,
+    changeViewBackgroundColor: true,
+    toggleTheme: null,
+  },
+};
+
 export function BoardPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -68,7 +79,7 @@ export function BoardPage() {
 
       {/* Canvas */}
       <div style={{ flex: 1 }}>
-        <Excalidraw />
+        <Excalidraw UIOptions={excalidrawUiOptions} />
       </div>
     </div>
   );

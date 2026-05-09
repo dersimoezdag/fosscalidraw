@@ -13,6 +13,7 @@ export function LoginPage() {
   const hasGoogle = import.meta.env.VITE_HAS_GOOGLE !== "false";
   const hasGithub = import.meta.env.VITE_HAS_GITHUB !== "false";
   const hasOidc = import.meta.env.VITE_HAS_OIDC === "true";
+  const hasDevOidc = import.meta.env.DEV && import.meta.env.VITE_DEV_OIDC !== "false";
   const oidcName = import.meta.env.VITE_OIDC_NAME ?? "Management App";
 
   return (
@@ -69,10 +70,20 @@ export function LoginPage() {
             </button>
           </a>
         )}
+        {hasDevOidc && (
+          <a href="/auth/dev/signin">
+            <button style={{
+              width: "100%", padding: "0.6rem 1.25rem", borderRadius: "var(--radius-md)",
+              border: "1px dashed var(--color-border)", fontWeight: 500, fontSize: "0.9rem"
+            }}>
+              Continue with simulated OIDC
+            </button>
+          </a>
+        )}
       </div>
 
       <p style={{ fontSize: "0.8rem", color: "var(--color-text-muted)", textAlign: "center" }}>
-        Self-hosted · MIT License · <a href="https://github.com/fosscalidraw/fosscalidraw" target="_blank" rel="noopener noreferrer" style={{ color: "var(--color-primary)" }}>GitHub</a>
+        Self-hosted · MIT License
       </p>
     </div>
   );

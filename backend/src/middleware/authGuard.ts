@@ -1,9 +1,10 @@
 import { Request, Response, NextFunction } from "express";
 import { getSession } from "@auth/express";
-import { authHandler } from "../auth/auth.config.js";
+import { authConfig } from "../auth/auth.config.js";
+import { getDevOidcSession } from "../auth/devOidc.js";
 
 export async function requireAuth(req: Request, res: Response, next: NextFunction) {
-  const session = await getSession(req, authHandler);
+  const session = getDevOidcSession(req) ?? await getSession(req, authConfig);
   if (!session?.user) {
     res.status(401).json({ error: "Unauthorized" });
     return;

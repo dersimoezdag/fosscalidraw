@@ -30,7 +30,7 @@ if (process.env.AUTH_OIDC_ISSUER) {
   });
 }
 
-export const authHandler = ExpressAuth({
+export const authConfig = {
   providers,
   secret: process.env.AUTH_SECRET!,
   trustHost: true,
@@ -45,4 +45,6 @@ export const authHandler = ExpressAuth({
       return session;
     },
   },
-});
+};
+
+export const authHandler = ExpressAuth(authConfig);

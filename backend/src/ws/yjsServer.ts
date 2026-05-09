@@ -5,7 +5,8 @@ import { setupWSConnection, setPersistence } from "y-websocket/bin/utils";
 import { MongodbPersistence } from "y-mongodb-provider";
 import * as Y from "yjs";
 import { getSession } from "@auth/express";
-import { authHandler } from "../auth/auth.config.js";
+import { authConfig } from "../auth/auth.config.js";
+import { getDevOidcSession } from "../auth/devOidc.js";
 import { Board } from "../boards/boards.model.js";
 
 export function initYjsServer(httpServer: Server) {
@@ -40,7 +41,7 @@ export function initYjsServer(httpServer: Server) {
     if (!match) { socket.destroy(); return; }
     const boardId = match[1];
 
-    const session = await getSession(req as any, authHandler).catch(() => null);
+    const session = getDevOidcSession(req as any) ?? await getSession(req as any, authConfig).catch(() => null);
     if (!session?.user) { socket.destroy(); return; }
 
     const board = await Board.findById(boardId).catch(() => null);

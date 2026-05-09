@@ -40,4 +40,4 @@ Set `AUTH_OIDC_ISSUER` in `.env` to delegate auth to your own OIDC provider.
 
 ## License
 
-MIT — fork of [Excalidraw](https://github.com/excalidraw/excalidraw) (MIT)
+MIT

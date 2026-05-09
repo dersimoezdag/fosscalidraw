@@ -33,14 +33,6 @@ Compatible OIDC servers: Authentik, Keycloak, any Auth.js app with OIDC plugin.
 - **editor**: can draw and edit canvas
 - **viewer**: read-only (WS connection allowed)
 
-## Keeping up with Excalidraw upstream
-```bash
-git remote add upstream https://github.com/excalidraw/excalidraw
-git fetch upstream
-git merge upstream/main
-# Conflicts only in packages/excalidraw/ — your app shell stays clean
-```
-
 ## Directory Structure
 ```
 fosscalidraw/
