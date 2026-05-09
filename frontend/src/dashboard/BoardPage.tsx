@@ -1,9 +1,24 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Excalidraw, MainMenu } from "@excalidraw/excalidraw";
+import {
+  CaptureUpdateAction,
+  Excalidraw,
+  MainMenu,
+  restore,
+} from "@excalidraw/excalidraw";
 import { useTranslation } from "react-i18next";
+import type { OrderedExcalidrawElement } from "@excalidraw/excalidraw/element/types";
+import type {
+  AppState,
+  BinaryFiles,
+  Collaborator,
+  ExcalidrawImperativeAPI,
+  ExcalidrawInitialDataState,
+  SocketId,
+} from "@excalidraw/excalidraw/types";
 import "@excalidraw/excalidraw/index.css";
 import { createCollabProvider, CollabProvider } from "../collaboration/CollabProvider";
+import { useSession } from "../auth/useSession";
 
 const excalidrawUiOptions = {
   canvasActions: {
@@ -27,15 +42,35 @@ interface BoardAccess {
 interface BoardDetails {
   title: string;
   publicAccess?: PublicAccess;
+  scene?: PersistedScene;
   access: BoardAccess;
 }
 
+interface PersistedScene {
+  elements?: readonly OrderedExcalidrawElement[];
+  appState?: ExcalidrawInitialDataState["appState"];
+  files?: BinaryFiles;
+}
+
+const collabOrigin = "fosscalidraw-local";
+
 export function BoardPage() {
   const { t } = useTranslation();
+  const { session } = useSession();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const providerRef = useRef<CollabProvider | null>(null);
+  const excalidrawApiRef = useRef<ExcalidrawImperativeAPI | null>(null);
+  const pendingRemoteSceneRef = useRef<{ scene: PersistedScene; editable: boolean } | null>(null);
+  const applyingRemoteSceneRef = useRef(false);
+  const isPointerDownRef = useRef(false);
+  const pendingCollaboratorUpdateRef = useRef<CollabProvider | null>(null);
+  const collaboratorUpdateTimerRef = useRef<number | null>(null);
+  const sceneSaveTimerRef = useRef<number | null>(null);
+  const lastSceneJsonRef = useRef("");
   const [title, setTitle] = useState(t("boardUntitled"));
+  const [initialData, setInitialData] = useState<ExcalidrawInitialDataState | null>(null);
+  const [sceneReady, setSceneReady] = useState(false);
   const [collaborators, setCollaborators] = useState(0);
   const [access, setAccess] = useState<BoardAccess | null>(null);
   const [publicAccess, setPublicAccess] = useState<PublicAccess>("private");
@@ -43,15 +78,115 @@ export function BoardPage() {
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<"editor" | "viewer">("editor");
   const [shareStatus, setShareStatus] = useState("");
+  const [guestName, setGuestName] = useState(() => window.localStorage.getItem("fosscalidraw.guestName") ?? "");
+  const [guestNameInput, setGuestNameInput] = useState(guestName);
+  const [guestNameDialogOpen, setGuestNameDialogOpen] = useState(false);
 
   const canEdit = access?.canEdit ?? false;
+  const needsGuestName = access?.role === "guest" && canEdit && !guestName.trim();
+  const activeCanEdit = canEdit && !needsGuestName;
   const canManage = access?.canManage ?? false;
+
+  const saveScene = useCallback((scene: PersistedScene) => {
+    if (!id) return;
+    if (sceneSaveTimerRef.current) {
+      window.clearTimeout(sceneSaveTimerRef.current);
+    }
+    sceneSaveTimerRef.current = window.setTimeout(() => {
+      fetch(`/api/boards/${id}/scene`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scene }),
+      }).catch(() => undefined);
+    }, 600);
+  }, [id]);
+
+  const applyScene = useCallback((scene: PersistedScene, editable: boolean) => {
+    const api = excalidrawApiRef.current;
+    if (!api) {
+      pendingRemoteSceneRef.current = { scene, editable };
+      return;
+    }
+
+    const restored = restore(
+      scene,
+      { viewModeEnabled: !editable },
+      api.getSceneElementsIncludingDeleted()
+    );
+
+    applyingRemoteSceneRef.current = true;
+    api.addFiles(Object.values(restored.files));
+    api.updateScene({
+      elements: restored.elements,
+      appState: restored.appState,
+      captureUpdate: CaptureUpdateAction.NEVER,
+    });
+    window.setTimeout(() => {
+      applyingRemoteSceneRef.current = false;
+    }, 0);
+  }, []);
+
+  const readYjsScene = useCallback((collab: CollabProvider): PersistedScene => ({
+    elements: collab.yScene.get("elements") ?? [],
+    appState: collab.yScene.get("appState") ?? {},
+    files: collab.yScene.get("files") ?? {},
+  }), []);
+
+  const writeYjsScene = useCallback((collab: CollabProvider, scene: PersistedScene) => {
+    collab.ydoc.transact(() => {
+      collab.yScene.set("elements", scene.elements ?? []);
+      collab.yScene.set("appState", scene.appState ?? {});
+      collab.yScene.set("files", scene.files ?? {});
+    }, collabOrigin);
+  }, []);
+
+  const updateRemoteCollaborators = useCallback((collab: CollabProvider) => {
+    const api = excalidrawApiRef.current;
+    if (isPointerDownRef.current) {
+      pendingCollaboratorUpdateRef.current = collab;
+      if (!collaboratorUpdateTimerRef.current) {
+        collaboratorUpdateTimerRef.current = window.setTimeout(() => {
+          collaboratorUpdateTimerRef.current = null;
+          const pendingCollab = pendingCollaboratorUpdateRef.current;
+          pendingCollaboratorUpdateRef.current = null;
+          if (pendingCollab && !isPointerDownRef.current) {
+            updateRemoteCollaborators(pendingCollab);
+          }
+        }, 80);
+      }
+      return;
+    }
+
+    const collaborators = new Map<SocketId, Collaborator>();
+
+    collab.provider.awareness.getStates().forEach((state: any, clientId: number) => {
+      if (clientId === collab.provider.awareness.clientID) return;
+      collaborators.set(String(clientId) as SocketId, {
+        pointer: state.pointer,
+        button: state.button,
+        selectedElementIds: state.selectedElementIds,
+        username: state.username,
+        color: state.color,
+        id: state.id,
+        socketId: String(clientId) as SocketId,
+      });
+    });
+
+    setCollaborators(collab.provider.awareness.getStates().size);
+    api?.updateScene({
+      appState: { collaborators },
+      captureUpdate: CaptureUpdateAction.NEVER,
+    });
+  }, []);
 
   useEffect(() => {
     if (!id) return;
 
     let cancelled = false;
     let collab: CollabProvider | null = null;
+    setSceneReady(false);
+    setInitialData(null);
 
     fetch(`/api/boards/${id}`, { credentials: "include" })
       .then((r) => {
@@ -73,24 +208,88 @@ export function BoardPage() {
         setPublicAccess(board.publicAccess ?? "private");
 
         if (board.access.canEdit) {
+          const isGuestEditor = board.access.role === "guest";
+          const collaboratorName = isGuestEditor ? guestName.trim() : getCollaboratorName(session?.user?.name);
+
+          if (isGuestEditor && !collaboratorName) {
+            const scene = board.scene ?? {};
+            lastSceneJsonRef.current = JSON.stringify(scene);
+            setInitialData({ ...scene, appState: { ...scene.appState, viewModeEnabled: true } });
+            setSceneReady(true);
+            setGuestNameDialogOpen(true);
+            return;
+          }
+
           collab = createCollabProvider(id);
           providerRef.current = collab;
-          collab.provider.awareness.on("change", () => {
-            setCollaborators(collab?.provider.awareness.getStates().size ?? 0);
+          collab.provider.awareness.setLocalStateField("username", collaboratorName);
+          collab.provider.awareness.setLocalStateField("id", session?.user?.id ?? `guest-${collab.provider.awareness.clientID}`);
+          collab.provider.awareness.setLocalStateField("color", getCollaboratorColor(collab.provider.awareness.clientID));
+          collab.provider.awareness.on("change", (changes: any) => {
+            const changedClients = [
+              ...(changes?.added ?? []),
+              ...(changes?.updated ?? []),
+              ...(changes?.removed ?? []),
+            ];
+            const onlyLocalClientChanged =
+              changedClients.length > 0 &&
+              changedClients.every((clientId) => clientId === collab?.provider.awareness.clientID);
+            if (onlyLocalClientChanged) return;
+
+            if (collab) updateRemoteCollaborators(collab);
           });
+
+          collab.yScene.observe((event) => {
+            if (event.transaction.origin === collabOrigin || !collab) return;
+            const scene = readYjsScene(collab);
+            const sceneJson = JSON.stringify(scene);
+            if (sceneJson === lastSceneJsonRef.current) return;
+            lastSceneJsonRef.current = sceneJson;
+            applyScene(scene, true);
+          });
+
+          collab.provider.on("sync", (synced: boolean) => {
+            if (!synced || cancelled || !collab) return;
+            const remoteScene = readYjsScene(collab);
+            const hasRemoteScene =
+              collab.yScene.has("elements") ||
+              collab.yScene.has("appState") ||
+              collab.yScene.has("files");
+            const scene = hasRemoteScene ? remoteScene : board.scene ?? {};
+
+            if (!hasRemoteScene) {
+              writeYjsScene(collab, scene);
+            }
+
+            lastSceneJsonRef.current = JSON.stringify(scene);
+            setInitialData({ ...scene, appState: { ...scene.appState, viewModeEnabled: false } });
+            setSceneReady(true);
+          });
+          return;
         }
+
+        const scene = board.scene ?? {};
+        lastSceneJsonRef.current = JSON.stringify(scene);
+        setInitialData({ ...scene, appState: { ...scene.appState, viewModeEnabled: true } });
+        setSceneReady(true);
       })
       .catch(() => navigate("/"));
 
     return () => {
       cancelled = true;
+      if (sceneSaveTimerRef.current) {
+        window.clearTimeout(sceneSaveTimerRef.current);
+      }
+      if (collaboratorUpdateTimerRef.current) {
+        window.clearTimeout(collaboratorUpdateTimerRef.current);
+      }
       collab?.provider.destroy();
       providerRef.current = null;
     };
-  }, [id, navigate]);
+  }, [applyScene, guestName, id, navigate, readYjsScene, session?.user?.id, session?.user?.name, updateRemoteCollaborators, writeYjsScene]);
 
   async function saveTitle(newTitle: string) {
-    if (!canEdit) return;
+    if (!activeCanEdit) return;
 
     setTitle(newTitle);
     await fetch(`/api/boards/${id}`, {
@@ -142,6 +341,64 @@ export function BoardPage() {
     setShareStatus(t("memberInvited"));
   }
 
+  function submitGuestName() {
+    const nextGuestName = guestNameInput.trim();
+    if (!nextGuestName) return;
+
+    window.localStorage.setItem("fosscalidraw.guestName", nextGuestName);
+    setGuestName(nextGuestName);
+    setGuestNameDialogOpen(false);
+    setSceneReady(false);
+  }
+
+  function handleSceneChange(
+    elements: readonly OrderedExcalidrawElement[],
+    appState: AppState,
+    files: BinaryFiles
+  ) {
+    if (!activeCanEdit || applyingRemoteSceneRef.current) return;
+
+    const scene: PersistedScene = {
+      elements: excalidrawApiRef.current?.getSceneElementsIncludingDeleted() ?? elements,
+      appState: pickPersistedAppState(appState),
+      files,
+    };
+    const sceneJson = JSON.stringify(scene);
+    if (sceneJson === lastSceneJsonRef.current) return;
+    lastSceneJsonRef.current = sceneJson;
+
+    const collab = providerRef.current;
+    if (collab) {
+      writeYjsScene(collab, scene);
+    }
+    saveScene(scene);
+  }
+
+  function handlePointerUpdate(payload: {
+    pointer: { x: number; y: number; tool: "pointer" | "laser" };
+    button: "down" | "up";
+  }) {
+    const collab = providerRef.current;
+    const api = excalidrawApiRef.current;
+    if (!collab || !activeCanEdit || !api) return;
+
+    isPointerDownRef.current = payload.button === "down";
+    collab.provider.awareness.setLocalStateField("pointer", {
+      ...payload.pointer,
+      renderCursor: true,
+    });
+    collab.provider.awareness.setLocalStateField("button", payload.button);
+    collab.provider.awareness.setLocalStateField("selectedElementIds", api.getAppState().selectedElementIds);
+
+    if (payload.button === "up") {
+      const pendingCollab = pendingCollaboratorUpdateRef.current;
+      pendingCollaboratorUpdateRef.current = null;
+      if (pendingCollab) {
+        window.setTimeout(() => updateRemoteCollaborators(pendingCollab), 0);
+      }
+    }
+  }
+
   return (
     <div style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
       <div style={{
@@ -149,22 +406,37 @@ export function BoardPage() {
         padding: "0 1rem", height: "48px", background: "var(--color-surface)",
         borderBottom: "1px solid var(--color-border)", zIndex: 10, flexShrink: 0
       }}>
-        <button className="btn-ghost" onClick={() => navigate("/")} style={{ padding: "0.4rem 0.6rem" }}>
-          {"<-"} {t("back")}
+        <button
+          className="btn-ghost"
+          onClick={() => navigate("/")}
+          aria-label={t("back")}
+          title={t("back")}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "0.35rem",
+            padding: "0.35rem 0.55rem",
+            color: "var(--color-text)",
+            fontWeight: 500,
+            lineHeight: 1,
+          }}
+        >
+          <span aria-hidden="true" style={{ fontSize: "1.1rem", lineHeight: 1 }}>←</span>
+          <span>{t("back")}</span>
         </button>
         <input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           onBlur={(e) => saveTitle(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
-          readOnly={!canEdit}
+          readOnly={!activeCanEdit}
           style={{
             border: "none", background: "transparent", fontWeight: 600,
             fontSize: "0.9rem", outline: "none", width: "200px"
           }}
         />
         <span style={{ marginLeft: "auto", fontSize: "0.8rem", color: "var(--color-text-muted)" }}>
-          {canEdit ? t("boardOnline", { count: collaborators }) : t("boardViewOnly")}
+          {activeCanEdit ? t("boardOnline", { count: collaborators }) : t("boardViewOnly")}
         </span>
         {canManage && (
           <button className="btn-primary" onClick={() => { setShareOpen(true); setShareStatus(""); }}>
@@ -174,24 +446,39 @@ export function BoardPage() {
       </div>
 
       <div style={{ flex: 1 }}>
-        <Excalidraw
-          key={canEdit ? "editable" : "readonly"}
-          UIOptions={excalidrawUiOptions}
-          initialData={{ appState: { viewModeEnabled: !canEdit } }}
-        >
-          <MainMenu>
-            <MainMenu.DefaultItems.LoadScene />
-            <MainMenu.DefaultItems.SaveToActiveFile />
-            <MainMenu.DefaultItems.Export />
-            <MainMenu.DefaultItems.SaveAsImage />
-            <MainMenu.DefaultItems.SearchMenu />
-            <MainMenu.DefaultItems.Help />
-            <MainMenu.DefaultItems.ClearCanvas />
-            <MainMenu.Separator />
-            <MainMenu.DefaultItems.ToggleTheme />
-            <MainMenu.DefaultItems.ChangeCanvasBackground />
-          </MainMenu>
-        </Excalidraw>
+        {sceneReady ? (
+          <Excalidraw
+            key={activeCanEdit ? "editable" : "readonly"}
+            UIOptions={excalidrawUiOptions}
+            initialData={initialData}
+            isCollaborating={activeCanEdit}
+            onChange={handleSceneChange}
+            onPointerUpdate={handlePointerUpdate}
+            excalidrawAPI={(api) => {
+              excalidrawApiRef.current = api;
+              const pendingScene = pendingRemoteSceneRef.current;
+              if (pendingScene) {
+                pendingRemoteSceneRef.current = null;
+                applyScene(pendingScene.scene, pendingScene.editable);
+              }
+              const collab = providerRef.current;
+              if (collab) updateRemoteCollaborators(collab);
+            }}
+          >
+            <MainMenu>
+              <MainMenu.DefaultItems.LoadScene />
+              <MainMenu.DefaultItems.SaveToActiveFile />
+              <MainMenu.DefaultItems.Export />
+              <MainMenu.DefaultItems.SaveAsImage />
+              <MainMenu.DefaultItems.SearchMenu />
+              <MainMenu.DefaultItems.Help />
+              <MainMenu.DefaultItems.ClearCanvas />
+              <MainMenu.Separator />
+              <MainMenu.DefaultItems.ToggleTheme />
+              <MainMenu.DefaultItems.ChangeCanvasBackground />
+            </MainMenu>
+          </Excalidraw>
+        ) : null}
       </div>
 
       {shareOpen && (
@@ -288,6 +575,72 @@ export function BoardPage() {
           </div>
         </div>
       )}
+
+      {guestNameDialogOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={t("guestNameTitle")}
+          style={{
+            position: "fixed", inset: 0, background: "rgba(0,0,0,0.32)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            padding: "1rem", zIndex: 1100
+          }}
+        >
+          <form
+            onSubmit={(e) => { e.preventDefault(); submitGuestName(); }}
+            style={{
+              width: "100%", maxWidth: "360px", background: "var(--color-surface)",
+              border: "1px solid var(--color-border)", borderRadius: "var(--radius-lg)",
+              boxShadow: "var(--shadow-md)", padding: "1.25rem", display: "grid", gap: "0.9rem"
+            }}
+          >
+            <div style={{ display: "grid", gap: "0.35rem" }}>
+              <h2 style={{ fontSize: "1rem", fontWeight: 700 }}>{t("guestNameTitle")}</h2>
+              <p style={{ fontSize: "0.85rem", color: "var(--color-text-muted)", lineHeight: 1.4 }}>
+                {t("guestNameDescription")}
+              </p>
+            </div>
+            <input
+              autoFocus
+              value={guestNameInput}
+              onChange={(e) => setGuestNameInput(e.target.value)}
+              placeholder={t("guestNamePlaceholder")}
+              style={{
+                minWidth: 0, border: "1px solid var(--color-border)",
+                borderRadius: "var(--radius-md)", padding: "0.65rem 0.75rem"
+              }}
+            />
+            <button className="btn-primary" type="submit" disabled={!guestNameInput.trim()}>
+              {t("continueToBoard")}
+            </button>
+          </form>
+        </div>
+      )}
     </div>
   );
+}
+
+function getCollaboratorName(name?: string | null) {
+  return name?.trim() || "Guest";
+}
+
+function getCollaboratorColor(clientId: number) {
+  const palette = [
+    { background: "#e3fafc", stroke: "#0b7285" },
+    { background: "#fff3bf", stroke: "#e67700" },
+    { background: "#ebfbee", stroke: "#2b8a3e" },
+    { background: "#f3f0ff", stroke: "#6741d9" },
+    { background: "#ffe3e3", stroke: "#c92a2a" },
+    { background: "#e7f5ff", stroke: "#1971c2" },
+  ];
+  return palette[clientId % palette.length];
+}
+
+function pickPersistedAppState(appState: AppState): PersistedScene["appState"] {
+  return {
+    viewBackgroundColor: appState.viewBackgroundColor,
+    gridSize: appState.gridSize,
+    theme: appState.theme,
+  };
 }

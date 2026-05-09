@@ -4,8 +4,7 @@ import { WebsocketProvider } from "y-websocket";
 export interface CollabProvider {
   ydoc: Y.Doc;
   provider: WebsocketProvider;
-  yElements: Y.Array<any>;
-  yAppState: Y.Map<any>;
+  yScene: Y.Map<any>;
 }
 
 export function createCollabProvider(boardId: string): CollabProvider {
@@ -21,8 +20,7 @@ export function createCollabProvider(boardId: string): CollabProvider {
     { connect: true }
   );
 
-  const yElements = ydoc.getArray<any>("excalidraw-elements");
-  const yAppState = ydoc.getMap<any>("excalidraw-appstate");
+  const yScene = ydoc.getMap<any>("excalidraw-scene");
 
-  return { ydoc, provider, yElements, yAppState };
+  return { ydoc, provider, yScene };
 }

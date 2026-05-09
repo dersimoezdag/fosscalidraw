@@ -27,11 +27,15 @@ export const resources = {
       invite: "Invite",
       memberInvited: "Member invited",
       memberInviteFailed: "Could not invite member",
+      guestNameTitle: "Your name",
+      guestNameDescription: "Enter the name other people will see next to your cursor.",
+      guestNamePlaceholder: "Your name",
+      continueToBoard: "Continue",
     },
   },
   de: {
     translation: {
-      back: "Zurueck",
+      back: "Zurück",
       boardUntitled: "Unbenanntes Board",
       boardViewOnly: "Nur ansehen",
       boardOnline: "{{count}} online",
@@ -54,6 +58,10 @@ export const resources = {
       invite: "Einladen",
       memberInvited: "Mitglied eingeladen",
       memberInviteFailed: "Mitglied konnte nicht eingeladen werden",
+      guestNameTitle: "Dein Name",
+      guestNameDescription: "Gib den Namen ein, den andere neben deinem Mauszeiger sehen.",
+      guestNamePlaceholder: "Dein Name",
+      continueToBoard: "Weiter",
     },
   },
 } as const;

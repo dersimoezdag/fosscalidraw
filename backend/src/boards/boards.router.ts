@@ -21,13 +21,25 @@ boardsRouter.get("/:id", optionalAuth, async (req, res) => {
   });
 });
 
+boardsRouter.patch("/:id/scene", optionalAuth, async (req, res) => {
+  const board = await Board.findById(req.params.id);
+  if (!board) { res.status(404).json({ error: "Not found" }); return; }
+
+  const access = getBoardAccess(board, (req as any).user);
+  if (!access.canEdit) { res.status(403).json({ error: "Forbidden" }); return; }
+
+  board.scene = normalizeScene(req.body.scene);
+  await board.save();
+  res.json({ ok: true, updatedAt: board.updatedAt });
+});
+
 boardsRouter.use(requireAuth);
 
 boardsRouter.get("/", async (req, res) => {
   const user = (req as any).user;
   const boards = await Board.find({
     $or: [{ ownerEmail: user.email }, { "members.email": user.email }],
-  }).sort({ updatedAt: -1 });
+  }).select("-scene").sort({ updatedAt: -1 });
   res.json(boards);
 });
 
@@ -39,6 +51,7 @@ boardsRouter.post("/", async (req, res) => {
     ownerEmail: user.email,
     members: [],
     publicAccess: "private",
+    scene: { elements: [], appState: {}, files: {} },
   });
   res.status(201).json(board);
 });
@@ -130,5 +143,13 @@ function getBoardAccess(board: any, user?: any) {
     canView: isOwner || Boolean(member) || publicAccess === "view" || publicAccess === "edit",
     canEdit: isOwner || member?.role === "editor" || publicAccess === "edit",
     canManage: isOwner,
+  };
+}
+
+function normalizeScene(scene: any) {
+  return {
+    elements: Array.isArray(scene?.elements) ? scene.elements : [],
+    appState: scene?.appState && typeof scene.appState === "object" ? scene.appState : {},
+    files: scene?.files && typeof scene.files === "object" ? scene.files : {},
   };
 }
