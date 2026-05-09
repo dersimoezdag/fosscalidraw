@@ -53,6 +53,8 @@ interface PersistedScene {
 }
 
 const collabOrigin = "fosscalidraw-local";
+const scenePayloadKey = "payload";
+const sceneRevisionKey = "revision";
 
 export function BoardPage() {
   const { t } = useTranslation();
@@ -66,6 +68,8 @@ export function BoardPage() {
   const isPointerDownRef = useRef(false);
   const pendingCollaboratorUpdateRef = useRef<CollabProvider | null>(null);
   const collaboratorUpdateTimerRef = useRef<number | null>(null);
+  const pendingSceneSyncRef = useRef(false);
+  const sceneSyncTimerRef = useRef<number | null>(null);
   const sceneSaveTimerRef = useRef<number | null>(null);
   const lastSceneJsonRef = useRef("");
   const [title, setTitle] = useState(t("boardUntitled"));
@@ -128,17 +132,15 @@ export function BoardPage() {
   }, []);
 
   const readYjsScene = useCallback((collab: CollabProvider): PersistedScene => ({
-    elements: cloneJson(collab.yScene.get("elements") ?? []),
-    appState: cloneJson(collab.yScene.get("appState") ?? {}),
-    files: cloneJson(collab.yScene.get("files") ?? {}),
+    ...readYjsScenePayload(collab),
   }), []);
 
   const writeYjsScene = useCallback((collab: CollabProvider, scene: PersistedScene) => {
     const nextScene = cloneScene(scene);
+    const payload = serializeScene(nextScene);
     collab.ydoc.transact(() => {
-      collab.yScene.set("elements", nextScene.elements ?? []);
-      collab.yScene.set("appState", nextScene.appState ?? {});
-      collab.yScene.set("files", nextScene.files ?? {});
+      collab.yScene.set(scenePayloadKey, payload);
+      collab.yScene.set(sceneRevisionKey, `${Date.now()}-${Math.random().toString(36).slice(2)}`);
     }, collabOrigin);
   }, []);
 
@@ -253,6 +255,7 @@ export function BoardPage() {
             if (!synced || cancelled || !collab) return;
             const remoteScene = readYjsScene(collab);
             const hasRemoteScene =
+              collab.yScene.has(scenePayloadKey) ||
               collab.yScene.has("elements") ||
               collab.yScene.has("appState") ||
               collab.yScene.has("files");
@@ -280,6 +283,9 @@ export function BoardPage() {
       cancelled = true;
       if (sceneSaveTimerRef.current) {
         window.clearTimeout(sceneSaveTimerRef.current);
+      }
+      if (sceneSyncTimerRef.current) {
+        window.clearTimeout(sceneSyncTimerRef.current);
       }
       if (collaboratorUpdateTimerRef.current) {
         window.clearTimeout(collaboratorUpdateTimerRef.current);
@@ -358,11 +364,44 @@ export function BoardPage() {
     files: BinaryFiles
   ) {
     if (!activeCanEdit || applyingRemoteSceneRef.current) return;
+    scheduleSceneSync(elements, appState, files);
+  }
 
+  function scheduleSceneSync(
+    elements: readonly OrderedExcalidrawElement[],
+    appState: AppState,
+    files: BinaryFiles
+  ) {
+    if (isPointerDownRef.current) {
+      pendingSceneSyncRef.current = true;
+      return;
+    }
+
+    if (sceneSyncTimerRef.current) {
+      window.clearTimeout(sceneSyncTimerRef.current);
+    }
+
+    sceneSyncTimerRef.current = window.setTimeout(() => {
+      sceneSyncTimerRef.current = null;
+      if (isPointerDownRef.current) {
+        pendingSceneSyncRef.current = true;
+        return;
+      }
+      syncCurrentScene(elements, appState, files);
+    }, 120);
+  }
+
+  function syncCurrentScene(
+    fallbackElements: readonly OrderedExcalidrawElement[],
+    fallbackAppState: AppState,
+    fallbackFiles: BinaryFiles
+  ) {
+    const api = excalidrawApiRef.current;
+    const currentAppState = api?.getAppState() ?? fallbackAppState;
     const scene = cloneScene({
-      elements: excalidrawApiRef.current?.getSceneElementsIncludingDeleted() ?? elements,
-      appState: pickPersistedAppState(appState),
-      files,
+      elements: api?.getSceneElementsIncludingDeleted() ?? fallbackElements,
+      appState: pickPersistedAppState(currentAppState),
+      files: api?.getFiles() ?? fallbackFiles,
     });
     const sceneJson = JSON.stringify(scene);
     if (sceneJson === lastSceneJsonRef.current) return;
@@ -373,6 +412,36 @@ export function BoardPage() {
       writeYjsScene(collab, scene);
     }
     saveScene(scene);
+  }
+
+  function flushPendingSceneSync() {
+    const api = excalidrawApiRef.current;
+    if (!api || !pendingSceneSyncRef.current) return;
+
+    pendingSceneSyncRef.current = false;
+    syncCurrentScene(
+      api.getSceneElementsIncludingDeleted(),
+      api.getAppState(),
+      api.getFiles()
+    );
+  }
+
+  function flushPendingCollaboratorUpdate() {
+    const pendingCollab = pendingCollaboratorUpdateRef.current;
+    pendingCollaboratorUpdateRef.current = null;
+    if (pendingCollab) {
+      window.setTimeout(() => updateRemoteCollaborators(pendingCollab), 0);
+    }
+  }
+
+  function handlePointerDown() {
+    isPointerDownRef.current = true;
+  }
+
+  function handlePointerUp() {
+    isPointerDownRef.current = false;
+    flushPendingSceneSync();
+    flushPendingCollaboratorUpdate();
   }
 
   function handlePointerUpdate(payload: {
@@ -392,11 +461,8 @@ export function BoardPage() {
     collab.provider.awareness.setLocalStateField("selectedElementIds", api.getAppState().selectedElementIds);
 
     if (payload.button === "up") {
-      const pendingCollab = pendingCollaboratorUpdateRef.current;
-      pendingCollaboratorUpdateRef.current = null;
-      if (pendingCollab) {
-        window.setTimeout(() => updateRemoteCollaborators(pendingCollab), 0);
-      }
+      flushPendingSceneSync();
+      flushPendingCollaboratorUpdate();
     }
   }
 
@@ -454,6 +520,8 @@ export function BoardPage() {
             initialData={initialData}
             isCollaborating={activeCanEdit}
             onChange={handleSceneChange}
+            onPointerDown={handlePointerDown}
+            onPointerUp={handlePointerUp}
             onPointerUpdate={handlePointerUpdate}
             excalidrawAPI={(api) => {
               excalidrawApiRef.current = api;
@@ -644,6 +712,27 @@ function cloneScene(scene: PersistedScene): PersistedScene {
     appState: cloneJson(scene.appState ?? {}),
     files: cloneJson(scene.files ?? {}),
   };
+}
+
+function readYjsScenePayload(collab: CollabProvider): PersistedScene {
+  const payload = collab.yScene.get(scenePayloadKey);
+  if (typeof payload === "string") {
+    try {
+      return cloneScene(JSON.parse(payload));
+    } catch {
+      return { elements: [], appState: {}, files: {} };
+    }
+  }
+
+  return {
+    elements: cloneJson(collab.yScene.get("elements") ?? []),
+    appState: cloneJson(collab.yScene.get("appState") ?? {}),
+    files: cloneJson(collab.yScene.get("files") ?? {}),
+  };
+}
+
+function serializeScene(scene: PersistedScene) {
+  return JSON.stringify(cloneScene(scene));
 }
 
 function cloneJson<T>(value: T): T {
