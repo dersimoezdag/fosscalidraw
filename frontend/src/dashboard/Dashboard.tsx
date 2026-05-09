@@ -1,4 +1,4 @@
-import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useSession } from "../auth/useSession";
@@ -26,6 +26,8 @@ export function Dashboard() {
   const [renameBoard, setRenameBoard] = useState<Board | null>(null);
   const [renameTitle, setRenameTitle] = useState("");
   const [deleteBoardTarget, setDeleteBoardTarget] = useState<Board | null>(null);
+  const [importStatus, setImportStatus] = useState("");
+  const importInputRef = useRef<HTMLInputElement | null>(null);
   const navigate = useNavigate();
   const { session, signOut } = useSession();
 
@@ -56,6 +58,43 @@ export function Dashboard() {
     });
     const board = await res.json();
     navigate(`/board/${board._id}`);
+  }
+
+  async function importBoard(file: File) {
+    setImportStatus("");
+
+    try {
+      const scene = JSON.parse(await file.text());
+      if (!Array.isArray(scene?.elements)) {
+        setImportStatus(t("importBoardInvalid"));
+        return;
+      }
+
+      const title = getImportedBoardTitle(scene, file.name, t("boardUntitled"));
+      const res = await fetch("/api/boards", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title,
+          scene: {
+            elements: scene.elements,
+            appState: scene.appState ?? {},
+            files: scene.files ?? {},
+          },
+        }),
+      });
+
+      if (!res.ok) {
+        setImportStatus(t("importBoardFailed"));
+        return;
+      }
+
+      const board = await res.json();
+      navigate(`/board/${board._id}`);
+    } catch {
+      setImportStatus(t("importBoardInvalid"));
+    }
   }
 
   function openContextMenu(e: MouseEvent, board: Board) {
@@ -133,8 +172,28 @@ export function Dashboard() {
       <main style={{ maxWidth: "1100px", margin: "0 auto", padding: "2rem 1.5rem" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.5rem" }}>
           <h1 style={{ fontSize: "1.25rem", fontWeight: 700 }}>{t("myBoards")}</h1>
-          <button className="btn-primary" onClick={createBoard}>+ {t("newBoard")}</button>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap", justifyContent: "flex-end" }}>
+            <input
+              ref={importInputRef}
+              type="file"
+              accept=".excalidraw,application/json"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                if (file) void importBoard(file);
+              }}
+              style={{ display: "none" }}
+            />
+            <button className="btn-ghost" onClick={() => importInputRef.current?.click()}>
+              {t("importBoard")}
+            </button>
+            <button className="btn-primary" onClick={createBoard}>+ {t("newBoard")}</button>
+          </div>
         </div>
+
+        {importStatus && (
+          <p style={{ color: "var(--color-text-muted)", marginBottom: "1rem" }}>{importStatus}</p>
+        )}
 
         {loading && <p style={{ color: "var(--color-text-muted)" }}>{t("loading")}</p>}
 
@@ -278,6 +337,14 @@ function ContextMenuButton({
       {children}
     </button>
   );
+}
+
+function getImportedBoardTitle(scene: any, fileName: string, fallback: string) {
+  const appStateName = typeof scene?.appState?.name === "string" ? scene.appState.name.trim() : "";
+  if (appStateName) return appStateName;
+
+  const fileTitle = fileName.replace(/\.excalidraw$/i, "").replace(/\.json$/i, "").trim();
+  return fileTitle || fallback;
 }
 
 function Modal({

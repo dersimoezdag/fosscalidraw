@@ -55,7 +55,7 @@ boardsRouter.get("/", asyncRoute(async (req, res) => {
 boardsRouter.post("/", asyncRoute(async (req, res) => {
   const user = (req as any).user;
   const board = await Board.create({
-    title: req.body.title ?? "Untitled Board",
+    title: typeof req.body.title === "string" && req.body.title.trim() ? req.body.title.trim() : "Untitled Board",
     ownerId: user.id,
     ownerEmail: user.email,
     members: [],
@@ -63,7 +63,7 @@ boardsRouter.post("/", asyncRoute(async (req, res) => {
     blockedGuests: [],
     publicAccess: "private",
     archived: false,
-    scene: { elements: [], appState: {}, files: {} },
+    scene: normalizeScene(req.body.scene),
   });
   res.status(201).json(board);
 }));

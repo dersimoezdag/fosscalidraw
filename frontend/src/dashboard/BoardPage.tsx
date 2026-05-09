@@ -68,7 +68,7 @@ const excalidrawUiOptions = {
 };
 
 export function BoardPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { session } = useSession();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -115,6 +115,7 @@ export function BoardPage() {
   const activeCanEdit = canEdit && !needsGuestName;
   const canManage = access?.canManage ?? false;
   const canRenameBoard = access?.role === "owner";
+  const excalidrawLangCode = i18n.language.toLowerCase().startsWith("de") ? "de-DE" : "en";
 
   const persistScene = useCallback((scene: PersistedScene, keepalive = false) => {
     if (!id) return;
@@ -777,6 +778,7 @@ export function BoardPage() {
             key={activeCanEdit ? "editable" : "readonly"}
             UIOptions={excalidrawUiOptions}
             initialData={initialData}
+            langCode={excalidrawLangCode}
             theme={colorScheme}
             isCollaborating={activeCanEdit}
             onChange={handleSceneChange}
