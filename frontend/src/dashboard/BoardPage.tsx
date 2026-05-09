@@ -23,6 +23,7 @@ import { ThemeToggle } from "../theme/ThemeToggle";
 import { useColorScheme } from "../theme/useColorScheme";
 
 const excalidrawUiOptions = {
+  dockedSidebarBreakpoint: Number.MAX_SAFE_INTEGER,
   canvasActions: {
     export: { saveFileToDisk: true },
     loadScene: true,
@@ -44,6 +45,7 @@ interface BoardAccess {
 
 interface BoardDetails {
   title: string;
+  updatedAt?: string;
   publicAccess?: PublicAccess;
   scene?: PersistedScene;
   access: BoardAccess;
@@ -87,6 +89,7 @@ export function BoardPage() {
   const sceneSyncTimerRef = useRef<number | null>(null);
   const sceneSaveTimerRef = useRef<number | null>(null);
   const lastSceneJsonRef = useRef("");
+  const lastSceneRef = useRef<PersistedScene | null>(null);
   const { colorScheme } = useColorScheme();
   const [title, setTitle] = useState(t("boardUntitled"));
   const [initialData, setInitialData] = useState<ExcalidrawInitialDataState | null>(null);
@@ -109,20 +112,33 @@ export function BoardPage() {
   const activeCanEdit = canEdit && !needsGuestName;
   const canManage = access?.canManage ?? false;
 
-  const saveScene = useCallback((scene: PersistedScene) => {
+  const persistScene = useCallback((scene: PersistedScene, keepalive = false) => {
+    if (!id) return;
+
+    return fetch(`/api/boards/${id}/scene`, {
+      method: "PATCH",
+      credentials: "include",
+      keepalive,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scene }),
+    }).catch(() => undefined);
+  }, [id]);
+
+  const saveScene = useCallback((scene: PersistedScene, immediate = false) => {
     if (!id) return;
     if (sceneSaveTimerRef.current) {
       window.clearTimeout(sceneSaveTimerRef.current);
+      sceneSaveTimerRef.current = null;
+    }
+    if (immediate) {
+      void persistScene(scene, true);
+      return;
     }
     sceneSaveTimerRef.current = window.setTimeout(() => {
-      fetch(`/api/boards/${id}/scene`, {
-        method: "PATCH",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scene }),
-      }).catch(() => undefined);
+      sceneSaveTimerRef.current = null;
+      void persistScene(scene);
     }, 600);
-  }, [id]);
+  }, [id, persistScene]);
 
   const applyScene = useCallback((scene: PersistedScene, editable: boolean) => {
     const api = excalidrawApiRef.current;
@@ -309,13 +325,25 @@ export function BoardPage() {
               collab.yScene.has("elements") ||
               collab.yScene.has("appState") ||
               collab.yScene.has("files");
-            const scene = cloneScene(hasRemoteScene ? remoteScene : board.scene ?? {});
+            const remoteUpdatedAt = getYjsSceneUpdatedAt(collab);
+            const boardUpdatedAt = board.updatedAt ? Date.parse(board.updatedAt) : 0;
+            const boardScene = board.scene ?? {};
+            const shouldUseRemoteScene =
+              hasRemoteScene &&
+              !isEmptyScene(remoteScene) &&
+              (
+                remoteUpdatedAt
+                  ? (!boardUpdatedAt || remoteUpdatedAt >= boardUpdatedAt)
+                  : isEmptyScene(boardScene)
+              );
+            const scene = cloneScene(shouldUseRemoteScene ? remoteScene : boardScene);
 
-            if (!hasRemoteScene) {
+            if (!shouldUseRemoteScene) {
               writeYjsScene(collab, scene);
             }
 
             lastSceneJsonRef.current = JSON.stringify(scene);
+            lastSceneRef.current = scene;
             setInitialData({ ...scene, appState: { ...scene.appState, viewModeEnabled: false } });
             setSceneReady(true);
           });
@@ -331,6 +359,10 @@ export function BoardPage() {
 
     return () => {
       cancelled = true;
+      flushPendingSceneSync();
+      if (sceneSaveTimerRef.current && lastSceneRef.current) {
+        saveScene(lastSceneRef.current, true);
+      }
       if (sceneSaveTimerRef.current) {
         window.clearTimeout(sceneSaveTimerRef.current);
       }
@@ -344,6 +376,18 @@ export function BoardPage() {
       providerRef.current = null;
     };
   }, [applyScene, guestName, id, navigate, readYjsScene, session?.user?.id, session?.user?.name, updateRemoteCollaborators, writeYjsScene]);
+
+  useEffect(() => {
+    const flushBeforeUnload = () => {
+      flushPendingSceneSync();
+      if (lastSceneRef.current) {
+        saveScene(lastSceneRef.current, true);
+      }
+    };
+
+    window.addEventListener("pagehide", flushBeforeUnload);
+    return () => window.removeEventListener("pagehide", flushBeforeUnload);
+  });
 
   async function saveTitle(newTitle: string) {
     if (!activeCanEdit) return;
@@ -467,7 +511,8 @@ export function BoardPage() {
   function syncCurrentScene(
     fallbackElements: readonly OrderedExcalidrawElement[],
     fallbackAppState: AppState,
-    fallbackFiles: BinaryFiles
+    fallbackFiles: BinaryFiles,
+    persistImmediately = false
   ) {
     const api = excalidrawApiRef.current;
     const currentAppState = api?.getAppState() ?? fallbackAppState;
@@ -479,12 +524,13 @@ export function BoardPage() {
     const sceneJson = JSON.stringify(scene);
     if (sceneJson === lastSceneJsonRef.current) return;
     lastSceneJsonRef.current = sceneJson;
+    lastSceneRef.current = scene;
 
     const collab = providerRef.current;
     if (collab) {
       writeYjsScene(collab, scene);
     }
-    saveScene(scene);
+    saveScene(scene, persistImmediately);
   }
 
   function flushPendingSceneSync() {
@@ -495,7 +541,8 @@ export function BoardPage() {
     syncCurrentScene(
       api.getSceneElementsIncludingDeleted(),
       api.getAppState(),
-      api.getFiles()
+      api.getFiles(),
+      true
     );
   }
 
@@ -864,6 +911,22 @@ function readYjsScenePayload(collab: CollabProvider): PersistedScene {
     appState: cloneJson(collab.yScene.get("appState") ?? {}),
     files: cloneJson(collab.yScene.get("files") ?? {}),
   };
+}
+
+function getYjsSceneUpdatedAt(collab: CollabProvider) {
+  const revision = collab.yScene.get(sceneRevisionKey);
+  if (typeof revision !== "string") return 0;
+
+  const timestamp = Number(revision.split("-")[0]);
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function isEmptyScene(scene: PersistedScene) {
+  return (
+    (scene.elements?.length ?? 0) === 0 &&
+    Object.keys(scene.files ?? {}).length === 0 &&
+    Object.keys(scene.appState ?? {}).length === 0
+  );
 }
 
 function isKicked(collab: CollabProvider) {
