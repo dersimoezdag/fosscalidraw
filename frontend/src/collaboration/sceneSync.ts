@@ -14,7 +14,19 @@ export interface PersistedScene {
 
 export const collabOrigin = "fosscalidraw-local";
 export const sceneSyncDelayMs = 120;
-export const liveSceneSyncDelayMs = 16;
+export const minLiveSceneSyncDelayMs = 12;
+export const maxLiveSceneSyncDelayMs = 80;
+export const initialLiveSceneSyncDelayMs = 16;
+
+interface LiveSceneSyncPressure {
+  currentDelay: number;
+  sceneJsonLength: number;
+  elementCount: number;
+  fileCount: number;
+  syncDurationMs: number;
+  connected: boolean;
+  changed: boolean;
+}
 
 const scenePayloadKey = "payload";
 const sceneRevisionKey = "revision";
@@ -96,6 +108,45 @@ export function hasYjsScene(collab: CollabProvider) {
     collab.yScene.has("appState") ||
     collab.yScene.has("files")
   );
+}
+
+export function getNextLiveSceneSyncDelay({
+  currentDelay,
+  sceneJsonLength,
+  elementCount,
+  fileCount,
+  syncDurationMs,
+  connected,
+  changed,
+}: LiveSceneSyncPressure) {
+  let targetDelay = minLiveSceneSyncDelayMs;
+
+  if (!connected) {
+    targetDelay = maxLiveSceneSyncDelayMs;
+  } else {
+    const sceneWeight =
+      elementCount +
+      fileCount * 30 +
+      Math.ceil(sceneJsonLength / 8_000);
+
+    if (sceneWeight > 800) targetDelay = Math.max(targetDelay, 48);
+    else if (sceneWeight > 400) targetDelay = Math.max(targetDelay, 32);
+    else if (sceneWeight > 180) targetDelay = Math.max(targetDelay, 20);
+
+    if (syncDurationMs > 24) targetDelay = Math.max(targetDelay, 64);
+    else if (syncDurationMs > 14) targetDelay = Math.max(targetDelay, 40);
+    else if (syncDurationMs > 8) targetDelay = Math.max(targetDelay, 24);
+
+    if (!changed) {
+      targetDelay = Math.max(targetDelay, 24);
+    }
+  }
+
+  if (targetDelay > currentDelay) {
+    return clampDelay(Math.min(targetDelay, currentDelay + 16));
+  }
+
+  return clampDelay(Math.max(targetDelay, currentDelay - 2));
 }
 
 export function isEmptyScene(scene: PersistedScene) {
@@ -195,4 +246,8 @@ function shouldReplaceElement(
 
 function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function clampDelay(delay: number) {
+  return Math.min(maxLiveSceneSyncDelayMs, Math.max(minLiveSceneSyncDelayMs, Math.round(delay)));
 }

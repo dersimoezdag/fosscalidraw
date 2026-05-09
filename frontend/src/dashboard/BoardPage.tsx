@@ -20,10 +20,11 @@ import {
   cloneScene,
   collabOrigin,
   createSceneSnapshot,
+  getNextLiveSceneSyncDelay,
   getYjsSceneUpdatedAt,
   hasYjsScene,
+  initialLiveSceneSyncDelayMs,
   isEmptyScene,
-  liveSceneSyncDelayMs,
   mergeScenes,
   PersistedScene,
   readYjsScene,
@@ -84,6 +85,7 @@ export function BoardPage() {
     appState: AppState;
     files: BinaryFiles;
   } | null>(null);
+  const liveSceneSyncDelayRef = useRef(initialLiveSceneSyncDelayMs);
   const sceneSyncTimerRef = useRef<number | null>(null);
   const sceneSaveTimerRef = useRef<number | null>(null);
   const lastSceneJsonRef = useRef("");
@@ -453,7 +455,7 @@ export function BoardPage() {
         if (payload) {
           syncCurrentScene(payload.elements, payload.appState, payload.files);
         }
-      }, liveSceneSyncDelayMs);
+      }, liveSceneSyncDelayRef.current);
       return;
     }
 
@@ -485,6 +487,7 @@ export function BoardPage() {
     );
     const sceneJson = JSON.stringify(scene);
     if (sceneJson === lastSceneJsonRef.current) {
+      updateLiveSceneSyncDelay(scene, sceneJson.length, 0, false);
       pendingSceneSyncRef.current = false;
       return;
     }
@@ -492,11 +495,34 @@ export function BoardPage() {
     lastSceneRef.current = scene;
 
     const collab = providerRef.current;
+    const syncStartedAt = performance.now();
+    let changed = false;
     if (collab) {
-      writeYjsScene(collab, scene);
+      changed = writeYjsScene(collab, scene);
     }
+    updateLiveSceneSyncDelay(scene, sceneJson.length, performance.now() - syncStartedAt, changed);
     pendingSceneSyncRef.current = false;
     saveScene(scene, persistImmediately);
+  }
+
+  function updateLiveSceneSyncDelay(
+    scene: PersistedScene,
+    sceneJsonLength: number,
+    syncDurationMs: number,
+    changed: boolean
+  ) {
+    if (!isPointerDownRef.current) return;
+
+    const collab = providerRef.current;
+    liveSceneSyncDelayRef.current = getNextLiveSceneSyncDelay({
+      currentDelay: liveSceneSyncDelayRef.current,
+      sceneJsonLength,
+      elementCount: scene.elements?.length ?? 0,
+      fileCount: Object.keys(scene.files ?? {}).length,
+      syncDurationMs,
+      connected: Boolean(!collab || (collab.provider as any).wsconnected),
+      changed,
+    });
   }
 
   function flushPendingSceneSync() {
