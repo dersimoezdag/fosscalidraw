@@ -1,10 +1,17 @@
 import { Router } from "express";
-import { authHandler } from "./auth.config.js";
-import { getDevOidcSession, signInDevOidc, signOutDevOidc } from "./devOidc.js";
+import { authHandler, publicAuthProviders } from "./auth.config.js";
+import { getDevOidcSession, isDevOidcEnabled, signInDevOidc, signOutDevOidc } from "./devOidc.js";
 
 export const authRouter = Router();
 
 authRouter.get("/dev/signin", signInDevOidc);
+
+authRouter.get("/providers", (_req, res) => {
+  res.json({
+    providers: publicAuthProviders,
+    devOidc: isDevOidcEnabled(),
+  });
+});
 
 authRouter.get("/session", (req, res, next) => {
   const session = getDevOidcSession(req);

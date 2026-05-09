@@ -1,21 +1,35 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSession } from "./useSession";
 import { ThemeToggle } from "../theme/ThemeToggle";
 
+type AuthProvider = {
+  id: "google" | "github" | "oidc" | string;
+  name: string;
+};
+
 export function LoginPage() {
   const { session, loading } = useSession();
   const navigate = useNavigate();
+  const [providers, setProviders] = useState<AuthProvider[]>([]);
+  const [hasDevOidc, setHasDevOidc] = useState(false);
 
   useEffect(() => {
     if (!loading && session) navigate("/");
   }, [session, loading, navigate]);
 
-  const hasGoogle = import.meta.env.VITE_HAS_GOOGLE !== "false";
-  const hasGithub = import.meta.env.VITE_HAS_GITHUB !== "false";
-  const hasOidc = import.meta.env.VITE_HAS_OIDC === "true";
-  const hasDevOidc = import.meta.env.DEV && import.meta.env.VITE_DEV_OIDC !== "false";
-  const oidcName = import.meta.env.VITE_OIDC_NAME ?? "Management App";
+  useEffect(() => {
+    fetch("/auth/providers", { credentials: "include" })
+      .then((response) => response.ok ? response.json() : Promise.reject())
+      .then((data: { providers?: AuthProvider[]; devOidc?: boolean }) => {
+        setProviders(data.providers ?? []);
+        setHasDevOidc(Boolean(data.devOidc));
+      })
+      .catch(() => {
+        setProviders([]);
+        setHasDevOidc(false);
+      });
+  }, []);
 
   return (
     <div style={{
@@ -48,34 +62,42 @@ export function LoginPage() {
       }}>
         <p style={{ fontWeight: 600, marginBottom: "0.25rem", textAlign: "center" }}>Sign in</p>
 
-        {hasGoogle && (
-          <a href="/auth/signin/google">
-            <button className="btn-primary" style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem" }}>
-              <span>Continue with Google</span>
-            </button>
-          </a>
-        )}
-        {hasGithub && (
-          <a href="/auth/signin/github">
-            <button style={{
-              width: "100%", padding: "0.6rem 1.25rem", borderRadius: "var(--radius-md)",
-              background: "#24292e", color: "white", fontWeight: 500, fontSize: "0.9rem"
-            }}>
-              Continue with GitHub
-            </button>
-          </a>
-        )}
-        {hasOidc && (
-          <a href="/auth/signin/oidc">
-            <button style={{
-              width: "100%", padding: "0.6rem 1.25rem", borderRadius: "var(--radius-md)",
-              border: "1px solid var(--color-border)", fontWeight: 500, fontSize: "0.9rem",
-              color: "var(--color-text)", background: "var(--color-control-bg)"
-            }}>
-              Continue via {oidcName}
-            </button>
-          </a>
-        )}
+        {providers.map((provider) => {
+          if (provider.id === "google") {
+            return (
+              <a href="/auth/signin/google" key={provider.id}>
+                <button className="btn-primary" style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem" }}>
+                  <span>Continue with Google</span>
+                </button>
+              </a>
+            );
+          }
+
+          if (provider.id === "github") {
+            return (
+              <a href="/auth/signin/github" key={provider.id}>
+                <button style={{
+                  width: "100%", padding: "0.6rem 1.25rem", borderRadius: "var(--radius-md)",
+                  background: "#24292e", color: "white", fontWeight: 500, fontSize: "0.9rem"
+                }}>
+                  Continue with GitHub
+                </button>
+              </a>
+            );
+          }
+
+          return (
+            <a href={`/auth/signin/${provider.id}`} key={provider.id}>
+              <button style={{
+                width: "100%", padding: "0.6rem 1.25rem", borderRadius: "var(--radius-md)",
+                border: "1px solid var(--color-border)", fontWeight: 500, fontSize: "0.9rem",
+                color: "var(--color-text)", background: "var(--color-control-bg)"
+              }}>
+                Continue via {provider.name}
+              </button>
+            </a>
+          );
+        })}
         {hasDevOidc && (
           <a href="/auth/dev/signin">
             <button style={{
