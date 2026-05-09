@@ -13,21 +13,30 @@ export function LoginPage() {
   const navigate = useNavigate();
   const [providers, setProviders] = useState<AuthProvider[]>([]);
   const [hasDevOidc, setHasDevOidc] = useState(false);
+  const [csrfToken, setCsrfToken] = useState("");
 
   useEffect(() => {
     if (!loading && session) navigate("/");
   }, [session, loading, navigate]);
 
   useEffect(() => {
-    fetch("/auth/providers", { credentials: "include" })
-      .then((response) => response.ok ? response.json() : Promise.reject())
-      .then((data: { providers?: AuthProvider[]; devOidc?: boolean }) => {
-        setProviders(data.providers ?? []);
-        setHasDevOidc(Boolean(data.devOidc));
+    Promise.all([
+      fetch("/auth/providers", { credentials: "include" }),
+      fetch("/auth/csrf", { credentials: "include" }),
+    ])
+      .then(async ([providersResponse, csrfResponse]) => {
+        if (!providersResponse.ok || !csrfResponse.ok) throw new Error("Unable to load auth configuration");
+        const providersData = await providersResponse.json() as { providers?: AuthProvider[]; devOidc?: boolean };
+        const csrfData = await csrfResponse.json() as { csrfToken?: string };
+
+        setProviders(providersData.providers ?? []);
+        setHasDevOidc(Boolean(providersData.devOidc));
+        setCsrfToken(csrfData.csrfToken ?? "");
       })
       .catch(() => {
         setProviders([]);
         setHasDevOidc(false);
+        setCsrfToken("");
       });
   }, []);
 
@@ -65,37 +74,43 @@ export function LoginPage() {
         {providers.map((provider) => {
           if (provider.id === "google") {
             return (
-              <a href="/auth/signin/google" key={provider.id}>
-                <button className="btn-primary" style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem" }}>
+              <form action="/auth/signin/google" method="post" key={provider.id}>
+                <input type="hidden" name="csrfToken" value={csrfToken} />
+                <input type="hidden" name="callbackUrl" value="/" />
+                <button className="btn-primary" type="submit" disabled={!csrfToken} style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem" }}>
                   <span>Continue with Google</span>
                 </button>
-              </a>
+              </form>
             );
           }
 
           if (provider.id === "github") {
             return (
-              <a href="/auth/signin/github" key={provider.id}>
-                <button style={{
+              <form action="/auth/signin/github" method="post" key={provider.id}>
+                <input type="hidden" name="csrfToken" value={csrfToken} />
+                <input type="hidden" name="callbackUrl" value="/" />
+                <button type="submit" disabled={!csrfToken} style={{
                   width: "100%", padding: "0.6rem 1.25rem", borderRadius: "var(--radius-md)",
                   background: "#24292e", color: "white", fontWeight: 500, fontSize: "0.9rem"
                 }}>
                   Continue with GitHub
                 </button>
-              </a>
+              </form>
             );
           }
 
           return (
-            <a href={`/auth/signin/${provider.id}`} key={provider.id}>
-              <button style={{
+            <form action={`/auth/signin/${provider.id}`} method="post" key={provider.id}>
+              <input type="hidden" name="csrfToken" value={csrfToken} />
+              <input type="hidden" name="callbackUrl" value="/" />
+              <button type="submit" disabled={!csrfToken} style={{
                 width: "100%", padding: "0.6rem 1.25rem", borderRadius: "var(--radius-md)",
                 border: "1px solid var(--color-border)", fontWeight: 500, fontSize: "0.9rem",
                 color: "var(--color-text)", background: "var(--color-control-bg)"
               }}>
                 Continue via {provider.name}
               </button>
-            </a>
+            </form>
           );
         })}
         {hasDevOidc && (

@@ -1,9 +1,13 @@
 const isProduction = process.env.NODE_ENV === "production";
+const appUrl = process.env.APP_URL ?? "http://localhost:3000";
+
+process.env.AUTH_URL ??= appUrl;
 
 export const config = {
   isProduction,
   port: process.env.BACKEND_PORT ?? 3001,
-  appUrl: process.env.APP_URL ?? "http://localhost:3000",
+  appUrl,
+  authUrl: process.env.AUTH_URL,
   mongoUri: process.env.MONGODB_URI,
   authSecret: process.env.AUTH_SECRET,
   jsonBodyLimit: process.env.JSON_BODY_LIMIT ?? "10mb",
@@ -29,6 +33,10 @@ export function validateConfig() {
 
     if (!config.appUrl.startsWith("https://")) {
       errors.push("APP_URL must use https:// in production.");
+    }
+
+    if (!config.authUrl?.startsWith("https://") || config.authUrl.includes("localhost")) {
+      errors.push("AUTH_URL must be the public https:// origin in production.");
     }
 
     if (!config.authSecret || config.authSecret.length < 32 || config.authSecret.startsWith("change-me")) {
