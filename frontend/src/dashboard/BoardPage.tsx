@@ -157,7 +157,7 @@ export function BoardPage() {
     api.addFiles(Object.values(restored.files));
     api.updateScene({
       elements: restored.elements,
-      appState: restored.appState,
+      appState: { viewModeEnabled: !editable },
       captureUpdate: CaptureUpdateAction.NEVER,
     });
     window.setTimeout(() => {
