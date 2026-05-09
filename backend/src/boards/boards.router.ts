@@ -76,7 +76,7 @@ boardsRouter.patch("/:id", asyncRoute(async (req, res) => {
   const updates: Record<string, unknown> = {};
 
   if (typeof req.body.title === "string") {
-    if (!access.canEdit && !access.canManage) { res.status(403).json({ error: "Forbidden" }); return; }
+    if (!access.canManage) { res.status(403).json({ error: "Forbidden" }); return; }
     updates.title = req.body.title.trim() || "Untitled Board";
   }
 

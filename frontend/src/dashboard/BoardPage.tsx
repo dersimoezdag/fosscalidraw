@@ -11,16 +11,48 @@ import type { OrderedExcalidrawElement } from "@excalidraw/excalidraw/element/ty
 import type {
   AppState,
   BinaryFiles,
-  Collaborator,
   ExcalidrawImperativeAPI,
   ExcalidrawInitialDataState,
-  SocketId,
 } from "@excalidraw/excalidraw/types";
 import "@excalidraw/excalidraw/index.css";
 import { createCollabProvider, CollabProvider } from "../collaboration/CollabProvider";
+import {
+  cloneScene,
+  collabOrigin,
+  createSceneSnapshot,
+  getYjsSceneUpdatedAt,
+  hasYjsScene,
+  isEmptyScene,
+  liveSceneSyncDelayMs,
+  mergeScenes,
+  PersistedScene,
+  readYjsScene,
+  sceneSyncDelayMs,
+  writeYjsScene,
+} from "../collaboration/sceneSync";
+import {
+  ActiveUser,
+  collectPresence,
+  configureLocalPresence,
+  getCollaboratorName,
+  isKicked,
+  isOnlyLocalAwarenessChange,
+  markKicked,
+} from "../collaboration/presence";
 import { useSession } from "../auth/useSession";
 import { ThemeToggle } from "../theme/ThemeToggle";
 import { useColorScheme } from "../theme/useColorScheme";
+import {
+  BoardAccess,
+  BoardDetails,
+  fetchBoard,
+  inviteBoardMember,
+  persistBoardScene,
+  PublicAccess,
+  removeActiveUserFromBoard,
+  updateBoardPublicAccess,
+  updateBoardTitle,
+} from "./boardApi";
 
 const excalidrawUiOptions = {
   dockedSidebarBreakpoint: Number.MAX_SAFE_INTEGER,
@@ -33,45 +65,6 @@ const excalidrawUiOptions = {
     toggleTheme: null,
   },
 };
-
-type PublicAccess = "private" | "view" | "edit";
-
-interface BoardAccess {
-  role: string;
-  canEdit: boolean;
-  canManage: boolean;
-  guestId?: string;
-}
-
-interface BoardDetails {
-  title: string;
-  updatedAt?: string;
-  publicAccess?: PublicAccess;
-  scene?: PersistedScene;
-  access: BoardAccess;
-}
-
-interface PersistedScene {
-  elements?: readonly OrderedExcalidrawElement[];
-  appState?: ExcalidrawInitialDataState["appState"];
-  files?: BinaryFiles;
-}
-
-interface ActiveUser {
-  clientId: number;
-  id?: string;
-  guestId?: string;
-  kickId?: string;
-  name: string;
-  email?: string;
-  color?: { background: string; stroke: string };
-  isCurrent: boolean;
-}
-
-const collabOrigin = "fosscalidraw-local";
-const scenePayloadKey = "payload";
-const sceneRevisionKey = "revision";
-const kickKeyPrefix = "kick:";
 
 export function BoardPage() {
   const { t } = useTranslation();
@@ -86,12 +79,20 @@ export function BoardPage() {
   const pendingCollaboratorUpdateRef = useRef<CollabProvider | null>(null);
   const collaboratorUpdateTimerRef = useRef<number | null>(null);
   const pendingSceneSyncRef = useRef(false);
+  const pendingSceneSyncPayloadRef = useRef<{
+    elements: readonly OrderedExcalidrawElement[];
+    appState: AppState;
+    files: BinaryFiles;
+  } | null>(null);
   const sceneSyncTimerRef = useRef<number | null>(null);
   const sceneSaveTimerRef = useRef<number | null>(null);
   const lastSceneJsonRef = useRef("");
   const lastSceneRef = useRef<PersistedScene | null>(null);
+  const titleInputRef = useRef<HTMLInputElement | null>(null);
   const { colorScheme } = useColorScheme();
   const [title, setTitle] = useState(t("boardUntitled"));
+  const [titleDraft, setTitleDraft] = useState(title);
+  const [isRenamingTitle, setIsRenamingTitle] = useState(false);
   const [initialData, setInitialData] = useState<ExcalidrawInitialDataState | null>(null);
   const [sceneReady, setSceneReady] = useState(false);
   const [collaborators, setCollaborators] = useState(0);
@@ -111,17 +112,11 @@ export function BoardPage() {
   const needsGuestName = access?.role === "guest" && canEdit && !guestName.trim();
   const activeCanEdit = canEdit && !needsGuestName;
   const canManage = access?.canManage ?? false;
+  const canRenameBoard = access?.role === "owner";
 
   const persistScene = useCallback((scene: PersistedScene, keepalive = false) => {
     if (!id) return;
-
-    return fetch(`/api/boards/${id}/scene`, {
-      method: "PATCH",
-      credentials: "include",
-      keepalive,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ scene }),
-    }).catch(() => undefined);
+    return persistBoardScene(id, scene, keepalive);
   }, [id]);
 
   const saveScene = useCallback((scene: PersistedScene, immediate = false) => {
@@ -147,12 +142,20 @@ export function BoardPage() {
       return;
     }
 
+    const localScene = createSceneSnapshot(
+      api.getSceneElementsIncludingDeleted(),
+      api.getAppState(),
+      api.getFiles()
+    );
+    const nextScene = mergeScenes(localScene, scene);
     const restored = restore(
-      scene,
+      nextScene,
       { viewModeEnabled: !editable },
       api.getSceneElementsIncludingDeleted()
     );
 
+    lastSceneJsonRef.current = JSON.stringify(nextScene);
+    lastSceneRef.current = nextScene;
     applyingRemoteSceneRef.current = true;
     api.addFiles(Object.values(restored.files));
     api.updateScene({
@@ -163,18 +166,6 @@ export function BoardPage() {
     window.setTimeout(() => {
       applyingRemoteSceneRef.current = false;
     }, 0);
-  }, []);
-
-  const readYjsScene = useCallback((collab: CollabProvider): PersistedScene => ({
-    ...readYjsScenePayload(collab),
-  }), []);
-
-  const writeYjsScene = useCallback((collab: CollabProvider, scene: PersistedScene) => {
-    const nextScene = cloneScene(scene);
-    collab.ydoc.transact(() => {
-      writeYjsScenePayload(collab, nextScene);
-      collab.yScene.set(sceneRevisionKey, `${Date.now()}-${Math.random().toString(36).slice(2)}`);
-    }, collabOrigin);
   }, []);
 
   const updateRemoteCollaborators = useCallback((collab: CollabProvider) => {
@@ -194,38 +185,7 @@ export function BoardPage() {
       return;
     }
 
-    const collaborators = new Map<SocketId, Collaborator>();
-    const activeUsers: ActiveUser[] = [];
-
-    collab.provider.awareness.getStates().forEach((state: any, clientId: number) => {
-      const userColor = state.color ?? getCollaboratorColor(clientId);
-      const userName = state.username || "Guest";
-      const isCurrent = clientId === collab.provider.awareness.clientID;
-
-      activeUsers.push({
-        clientId,
-        id: state.id,
-        guestId: state.guestId,
-        kickId: state.kickId,
-        name: userName,
-        email: state.email,
-        color: userColor,
-        isCurrent,
-      });
-
-      if (isCurrent) return;
-      collaborators.set(String(clientId) as SocketId, {
-        pointer: state.pointer,
-        button: state.button,
-        selectedElementIds: state.selectedElementIds,
-        username: userName,
-        color: userColor,
-        id: state.id,
-        socketId: String(clientId) as SocketId,
-      });
-    });
-
-    activeUsers.sort((a, b) => Number(b.isCurrent) - Number(a.isCurrent) || a.name.localeCompare(b.name));
+    const { activeUsers, collaborators } = collectPresence(collab);
     setActiveUsers(activeUsers);
     setCollaborators(activeUsers.length);
     api?.updateScene({
@@ -242,22 +202,23 @@ export function BoardPage() {
     setSceneReady(false);
     setInitialData(null);
 
-    fetch(`/api/boards/${id}`, { credentials: "include" })
-      .then((r) => {
-        if (r.status === 401) {
+    fetchBoard(id)
+      .then((result) => {
+        if (result.status === "unauthorized") {
           navigate("/login");
           return null;
         }
-        if (!r.ok) {
+        if (result.status !== "ok") {
           navigate("/");
           return null;
         }
-        return r.json();
+        return result.board;
       })
       .then((board: BoardDetails | null) => {
         if (!board || cancelled) return;
 
         setTitle(board.title);
+        setTitleDraft(board.title);
         setAccess(board.access);
         setPublicAccess(board.publicAccess ?? "private");
 
@@ -281,22 +242,15 @@ export function BoardPage() {
 
           collab = createCollabProvider(id);
           providerRef.current = collab;
-          collab.provider.awareness.setLocalStateField("username", collaboratorName);
-          collab.provider.awareness.setLocalStateField("id", session?.user?.id ?? board.access.guestId ?? `guest-${collab.provider.awareness.clientID}`);
-          collab.provider.awareness.setLocalStateField("email", session?.user?.email);
-          collab.provider.awareness.setLocalStateField("guestId", board.access.guestId);
-          collab.provider.awareness.setLocalStateField("kickId", kickId);
-          collab.provider.awareness.setLocalStateField("color", getCollaboratorColor(collab.provider.awareness.clientID));
+          configureLocalPresence(collab, {
+            username: collaboratorName,
+            id: session?.user?.id ?? board.access.guestId ?? `guest-${collab.provider.awareness.clientID}`,
+            email: session?.user?.email,
+            guestId: board.access.guestId,
+            kickId,
+          });
           collab.provider.awareness.on("change", (changes: any) => {
-            const changedClients = [
-              ...(changes?.added ?? []),
-              ...(changes?.updated ?? []),
-              ...(changes?.removed ?? []),
-            ];
-            const onlyLocalClientChanged =
-              changedClients.length > 0 &&
-              changedClients.every((clientId) => clientId === collab?.provider.awareness.clientID);
-            if (onlyLocalClientChanged) return;
+            if (!collab || isOnlyLocalAwarenessChange(collab, changes)) return;
 
             if (collab) updateRemoteCollaborators(collab);
           });
@@ -309,14 +263,10 @@ export function BoardPage() {
               navigate("/");
               return;
             }
-            const scene = readYjsScene(collab);
+            const remoteScene = readYjsScene(collab);
+            const scene = mergeScenes(lastSceneRef.current, remoteScene);
             const sceneJson = JSON.stringify(scene);
             if (sceneJson === lastSceneJsonRef.current) return;
-            lastSceneJsonRef.current = sceneJson;
-            if (isPointerDownRef.current) {
-              pendingRemoteSceneRef.current = { scene, editable: true };
-              return;
-            }
             applyScene(scene, true);
           };
           collab.yScene.observe(handleRemoteSceneUpdate);
@@ -326,13 +276,7 @@ export function BoardPage() {
           collab.provider.on("sync", (synced: boolean) => {
             if (!synced || cancelled || !collab) return;
             const remoteScene = readYjsScene(collab);
-            const hasRemoteScene =
-              collab.yElements.size > 0 ||
-              collab.yFiles.size > 0 ||
-              collab.yScene.has(scenePayloadKey) ||
-              collab.yScene.has("elements") ||
-              collab.yScene.has("appState") ||
-              collab.yScene.has("files");
+            const hasRemoteScene = hasYjsScene(collab);
             const remoteUpdatedAt = getYjsSceneUpdatedAt(collab);
             const boardUpdatedAt = board.updatedAt ? Date.parse(board.updatedAt) : 0;
             const boardScene = board.scene ?? {};
@@ -397,16 +341,37 @@ export function BoardPage() {
     return () => window.removeEventListener("pagehide", flushBeforeUnload);
   });
 
-  async function saveTitle(newTitle: string) {
-    if (!activeCanEdit) return;
+  useEffect(() => {
+    if (!isRenamingTitle) return;
+    titleInputRef.current?.focus();
+    titleInputRef.current?.select();
+  }, [isRenamingTitle]);
 
-    setTitle(newTitle);
-    await fetch(`/api/boards/${id}`, {
-      method: "PATCH",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: newTitle }),
-    });
+  async function saveTitle(newTitle: string) {
+    if (!canRenameBoard || !id) return;
+
+    const nextTitle = newTitle.trim() || t("boardUntitled");
+    const previousTitle = title;
+    setTitle(nextTitle);
+    setTitleDraft(nextTitle);
+    setIsRenamingTitle(false);
+
+    const response = await updateBoardTitle(id, nextTitle);
+    if (!response.ok) {
+      setTitle(previousTitle);
+      setTitleDraft(previousTitle);
+    }
+  }
+
+  function startRenamingTitle() {
+    if (!canRenameBoard) return;
+    setTitleDraft(title);
+    setIsRenamingTitle(true);
+  }
+
+  function cancelRenamingTitle() {
+    setTitleDraft(title);
+    setIsRenamingTitle(false);
   }
 
   async function copyBoardLink() {
@@ -415,14 +380,9 @@ export function BoardPage() {
   }
 
   async function updatePublicAccess(nextAccess: PublicAccess) {
-    const res = await fetch(`/api/boards/${id}/share`, {
-      method: "PATCH",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ publicAccess: nextAccess }),
-    });
+    if (!id) return;
 
-    if (!res.ok) {
+    if (!await updateBoardPublicAccess(id, nextAccess)) {
       setShareStatus(t("guestAccessUpdateFailed"));
       return;
     }
@@ -432,16 +392,9 @@ export function BoardPage() {
   }
 
   async function inviteMember() {
-    if (!inviteEmail.trim()) return;
+    if (!id || !inviteEmail.trim()) return;
 
-    const res = await fetch(`/api/boards/${id}/members`, {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: inviteEmail.trim(), role: inviteRole }),
-    });
-
-    if (!res.ok) {
+    if (!await inviteBoardMember(id, inviteEmail.trim(), inviteRole)) {
       setShareStatus(t("memberInviteFailed"));
       return;
     }
@@ -451,24 +404,15 @@ export function BoardPage() {
   }
 
   async function removeActiveUser(user: ActiveUser) {
-    if (!canManage || user.isCurrent) return;
+    if (!id || !canManage || user.isCurrent) return;
 
     const collab = providerRef.current;
     const kickId = user.kickId ?? user.id ?? `client:${user.clientId}`;
     if (collab) {
-      collab.yScene.set(`${kickKeyPrefix}${kickId}`, Date.now());
+      markKicked(collab, kickId);
     }
 
-    await fetch(`/api/boards/${id}/remove-active-user`, {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        email: user.email,
-        guestId: user.guestId,
-        name: user.name,
-      }),
-    }).catch(() => undefined);
+    await removeActiveUserFromBoard(id, user);
 
     setActiveUsersOpen(false);
   }
@@ -497,8 +441,19 @@ export function BoardPage() {
     appState: AppState,
     files: BinaryFiles
   ) {
+    pendingSceneSyncRef.current = true;
+    pendingSceneSyncPayloadRef.current = { elements, appState, files };
+
     if (isPointerDownRef.current) {
-      pendingSceneSyncRef.current = true;
+      if (sceneSyncTimerRef.current) return;
+
+      sceneSyncTimerRef.current = window.setTimeout(() => {
+        sceneSyncTimerRef.current = null;
+        const payload = pendingSceneSyncPayloadRef.current;
+        if (payload) {
+          syncCurrentScene(payload.elements, payload.appState, payload.files);
+        }
+      }, liveSceneSyncDelayMs);
       return;
     }
 
@@ -508,12 +463,11 @@ export function BoardPage() {
 
     sceneSyncTimerRef.current = window.setTimeout(() => {
       sceneSyncTimerRef.current = null;
-      if (isPointerDownRef.current) {
-        pendingSceneSyncRef.current = true;
-        return;
+      const payload = pendingSceneSyncPayloadRef.current;
+      if (payload) {
+        syncCurrentScene(payload.elements, payload.appState, payload.files);
       }
-      syncCurrentScene(elements, appState, files);
-    }, 120);
+    }, sceneSyncDelayMs);
   }
 
   function syncCurrentScene(
@@ -524,13 +478,16 @@ export function BoardPage() {
   ) {
     const api = excalidrawApiRef.current;
     const currentAppState = api?.getAppState() ?? fallbackAppState;
-    const scene = cloneScene({
-      elements: api?.getSceneElementsIncludingDeleted() ?? fallbackElements,
-      appState: pickPersistedAppState(currentAppState),
-      files: api?.getFiles() ?? fallbackFiles,
-    });
+    const scene = createSceneSnapshot(
+      api?.getSceneElementsIncludingDeleted() ?? fallbackElements,
+      currentAppState,
+      api?.getFiles() ?? fallbackFiles
+    );
     const sceneJson = JSON.stringify(scene);
-    if (sceneJson === lastSceneJsonRef.current) return;
+    if (sceneJson === lastSceneJsonRef.current) {
+      pendingSceneSyncRef.current = false;
+      return;
+    }
     lastSceneJsonRef.current = sceneJson;
     lastSceneRef.current = scene;
 
@@ -538,6 +495,7 @@ export function BoardPage() {
     if (collab) {
       writeYjsScene(collab, scene);
     }
+    pendingSceneSyncRef.current = false;
     saveScene(scene, persistImmediately);
   }
 
@@ -545,6 +503,10 @@ export function BoardPage() {
     const api = excalidrawApiRef.current;
     if (!api || !pendingSceneSyncRef.current) return;
 
+    if (sceneSyncTimerRef.current) {
+      window.clearTimeout(sceneSyncTimerRef.current);
+      sceneSyncTimerRef.current = null;
+    }
     pendingSceneSyncRef.current = false;
     syncCurrentScene(
       api.getSceneElementsIncludingDeleted(),
@@ -630,17 +592,88 @@ export function BoardPage() {
           <span aria-hidden="true" style={{ fontSize: "1.1rem", lineHeight: 1 }}>←</span>
           <span>{t("back")}</span>
         </button>
-        <input
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          onBlur={(e) => saveTitle(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
-          readOnly={!activeCanEdit}
-          style={{
-            border: "none", background: "transparent", fontWeight: 600,
-            fontSize: "0.9rem", outline: "none", width: "200px"
-          }}
-        />
+        <div style={{
+          display: "flex", alignItems: "center", gap: "0.35rem",
+          minWidth: 0, maxWidth: "min(360px, 42vw)"
+        }}>
+          {isRenamingTitle ? (
+            <input
+              ref={titleInputRef}
+              value={titleDraft}
+              onChange={(e) => setTitleDraft(e.target.value)}
+              onBlur={(e) => saveTitle(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  saveTitle((e.target as HTMLInputElement).value);
+                }
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  cancelRenamingTitle();
+                }
+              }}
+              style={{
+                border: "1px solid var(--color-border)",
+                borderRadius: "var(--radius-md)",
+                background: "var(--color-bg)",
+                color: "var(--color-text)",
+                fontWeight: 600,
+                fontSize: "0.9rem",
+                outline: "none",
+                width: "220px",
+                maxWidth: "100%",
+                padding: "0.35rem 0.5rem",
+              }}
+            />
+          ) : (
+            <span
+              title={title}
+              style={{
+                fontWeight: 600,
+                fontSize: "0.9rem",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {title}
+            </span>
+          )}
+          {canRenameBoard && !isRenamingTitle && (
+            <button
+              type="button"
+              className="btn-ghost"
+              onClick={startRenamingTitle}
+              aria-label={t("renameBoard")}
+              title={t("renameBoard")}
+              style={{
+                width: "30px",
+                height: "30px",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: 0,
+                flexShrink: 0,
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path
+                  d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17v3Z"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <path
+                  d="m14 8 2 2"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </button>
+          )}
+        </div>
         <div style={{ marginLeft: "auto", position: "relative" }}>
           <button
             className="btn-ghost"
@@ -889,125 +922,4 @@ export function BoardPage() {
       )}
     </div>
   );
-}
-
-function getCollaboratorName(name?: string | null) {
-  return name?.trim() || "Guest";
-}
-
-function getCollaboratorColor(clientId: number) {
-  const palette = [
-    { background: "#e3fafc", stroke: "#0b7285" },
-    { background: "#fff3bf", stroke: "#e67700" },
-    { background: "#ebfbee", stroke: "#2b8a3e" },
-    { background: "#f3f0ff", stroke: "#6741d9" },
-    { background: "#ffe3e3", stroke: "#c92a2a" },
-    { background: "#e7f5ff", stroke: "#1971c2" },
-  ];
-  return palette[clientId % palette.length];
-}
-
-function cloneScene(scene: PersistedScene): PersistedScene {
-  return {
-    elements: cloneJson(scene.elements ?? []),
-    appState: pickPersistedAppState(scene.appState ?? {}),
-    files: cloneJson(scene.files ?? {}),
-  };
-}
-
-function readYjsScenePayload(collab: CollabProvider): PersistedScene {
-  if (collab.yElements.size > 0 || collab.yFiles.size > 0) {
-    return {
-      elements: orderElements(Array.from(collab.yElements.values())),
-      appState: {},
-      files: Object.fromEntries(collab.yFiles.entries()) as BinaryFiles,
-    };
-  }
-
-  const payload = collab.yScene.get(scenePayloadKey);
-  if (typeof payload === "string") {
-    try {
-      return cloneScene(JSON.parse(payload));
-    } catch {
-      return { elements: [], appState: {}, files: {} };
-    }
-  }
-
-  return {
-    elements: cloneJson(collab.yScene.get("elements") ?? []),
-    appState: pickPersistedAppState(collab.yScene.get("appState") ?? {}),
-    files: cloneJson(collab.yScene.get("files") ?? {}),
-  };
-}
-
-function writeYjsScenePayload(collab: CollabProvider, scene: PersistedScene) {
-  for (const element of scene.elements ?? []) {
-    const currentElement = collab.yElements.get(element.id);
-    if (shouldReplaceElement(currentElement, element)) {
-      collab.yElements.set(element.id, cloneJson(element));
-    }
-  }
-
-  Object.entries(scene.files ?? {}).forEach(([fileId, file]) => {
-    collab.yFiles.set(fileId, cloneJson(file));
-  });
-
-  collab.yScene.delete(scenePayloadKey);
-  collab.yScene.delete("elements");
-  collab.yScene.delete("appState");
-  collab.yScene.delete("files");
-}
-
-function getYjsSceneUpdatedAt(collab: CollabProvider) {
-  const revision = collab.yScene.get(sceneRevisionKey);
-  if (typeof revision !== "string") return 0;
-
-  const timestamp = Number(revision.split("-")[0]);
-  return Number.isFinite(timestamp) ? timestamp : 0;
-}
-
-function isEmptyScene(scene: PersistedScene) {
-  return (
-    (scene.elements?.length ?? 0) === 0 &&
-    Object.keys(scene.files ?? {}).length === 0 &&
-    Object.keys(scene.appState ?? {}).length === 0
-  );
-}
-
-function isKicked(collab: CollabProvider) {
-  const localState: any = collab.provider.awareness.getLocalState();
-  const localKickId = localState?.kickId;
-  return Boolean(
-    (localKickId && collab.yScene.has(`${kickKeyPrefix}${localKickId}`)) ||
-    collab.yScene.has(`${kickKeyPrefix}${localState?.id}`) ||
-    collab.yScene.has(`${kickKeyPrefix}client:${collab.provider.awareness.clientID}`)
-  );
-}
-
-function cloneJson<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
-}
-
-function pickPersistedAppState(_appState: Partial<AppState>): PersistedScene["appState"] {
-  return {};
-}
-
-function orderElements(elements: OrderedExcalidrawElement[]) {
-  return elements.sort((a, b) => {
-    const aIndex = "index" in a ? String(a.index) : "";
-    const bIndex = "index" in b ? String(b.index) : "";
-    if (aIndex && bIndex && aIndex !== bIndex) return aIndex.localeCompare(bIndex);
-    return a.id.localeCompare(b.id);
-  });
-}
-
-function shouldReplaceElement(
-  currentElement: OrderedExcalidrawElement | undefined,
-  nextElement: OrderedExcalidrawElement
-) {
-  if (!currentElement) return true;
-  const currentVersion = Number(currentElement.version ?? 0);
-  const nextVersion = Number(nextElement.version ?? 0);
-  if (nextVersion !== currentVersion) return nextVersion > currentVersion;
-  return Number(nextElement.versionNonce ?? 0) !== Number(currentElement.versionNonce ?? 0);
 }
