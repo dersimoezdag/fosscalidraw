@@ -908,7 +908,7 @@ function readYjsScenePayload(collab: CollabProvider): PersistedScene {
 
   return {
     elements: cloneJson(collab.yScene.get("elements") ?? []),
-    appState: cloneJson(collab.yScene.get("appState") ?? {}),
+    appState: pickPersistedAppState(collab.yScene.get("appState") ?? {}),
     files: cloneJson(collab.yScene.get("files") ?? {}),
   };
 }
@@ -947,15 +947,6 @@ function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
-function pickPersistedAppState(appState: Partial<AppState>): PersistedScene["appState"] {
-  const persistedAppState: Record<string, unknown> = {};
-
-  if ("viewBackgroundColor" in appState) {
-    persistedAppState.viewBackgroundColor = appState.viewBackgroundColor;
-  }
-  if ("gridSize" in appState) {
-    persistedAppState.gridSize = appState.gridSize;
-  }
-
-  return persistedAppState as PersistedScene["appState"];
+function pickPersistedAppState(_appState: Partial<AppState>): PersistedScene["appState"] {
+  return {};
 }
