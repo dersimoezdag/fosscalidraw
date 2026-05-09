@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSession } from "./useSession";
+import { ThemeToggle } from "../theme/ThemeToggle";
 
 export function LoginPage() {
   const { session, loading } = useSession();
@@ -21,6 +22,10 @@ export function LoginPage() {
       display: "flex", flexDirection: "column", alignItems: "center",
       justifyContent: "center", minHeight: "100vh", gap: "1.5rem", padding: "2rem"
     }}>
+      <div style={{ position: "fixed", top: "1rem", right: "1rem" }}>
+        <ThemeToggle />
+      </div>
+
       {/* Logo */}
       <svg width="48" height="48" viewBox="0 0 32 32" fill="none" aria-label="FOSScalidraw logo">
         <rect width="32" height="32" rx="8" fill="#01696f"/>
@@ -64,7 +69,8 @@ export function LoginPage() {
           <a href="/auth/signin/oidc">
             <button style={{
               width: "100%", padding: "0.6rem 1.25rem", borderRadius: "var(--radius-md)",
-              border: "1px solid var(--color-border)", fontWeight: 500, fontSize: "0.9rem"
+              border: "1px solid var(--color-border)", fontWeight: 500, fontSize: "0.9rem",
+              color: "var(--color-text)", background: "var(--color-control-bg)"
             }}>
               Continue via {oidcName}
             </button>
@@ -74,7 +80,8 @@ export function LoginPage() {
           <a href="/auth/dev/signin">
             <button style={{
               width: "100%", padding: "0.6rem 1.25rem", borderRadius: "var(--radius-md)",
-              border: "1px dashed var(--color-border)", fontWeight: 500, fontSize: "0.9rem"
+              border: "1px dashed var(--color-border)", fontWeight: 500, fontSize: "0.9rem",
+              color: "var(--color-text)", background: "var(--color-control-bg)"
             }}>
               Continue with simulated OIDC
             </button>

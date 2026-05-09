@@ -19,6 +19,8 @@ import type {
 import "@excalidraw/excalidraw/index.css";
 import { createCollabProvider, CollabProvider } from "../collaboration/CollabProvider";
 import { useSession } from "../auth/useSession";
+import { ThemeToggle } from "../theme/ThemeToggle";
+import { useColorScheme } from "../theme/useColorScheme";
 
 const excalidrawUiOptions = {
   canvasActions: {
@@ -82,9 +84,8 @@ export function BoardPage() {
   const sceneSyncTimerRef = useRef<number | null>(null);
   const sceneSaveTimerRef = useRef<number | null>(null);
   const lastSceneJsonRef = useRef("");
-  const [colorScheme, setColorScheme] = useState<"light" | "dark">(() =>
-    window.localStorage.getItem("fosscalidraw.colorScheme") === "dark" ? "dark" : "light"
-  );
+  const { colorScheme } = useColorScheme();
+  const colorSchemeRef = useRef(colorScheme);
   const [title, setTitle] = useState(t("boardUntitled"));
   const [initialData, setInitialData] = useState<ExcalidrawInitialDataState | null>(null);
   const [sceneReady, setSceneReady] = useState(false);
@@ -107,8 +108,7 @@ export function BoardPage() {
   const canManage = access?.canManage ?? false;
 
   useEffect(() => {
-    document.documentElement.dataset.theme = colorScheme;
-    window.localStorage.setItem("fosscalidraw.colorScheme", colorScheme);
+    colorSchemeRef.current = colorScheme;
     excalidrawApiRef.current?.updateScene({
       appState: { theme: colorScheme },
       captureUpdate: CaptureUpdateAction.NEVER,
@@ -147,7 +147,7 @@ export function BoardPage() {
     api.addFiles(Object.values(restored.files));
     api.updateScene({
       elements: restored.elements,
-      appState: restored.appState,
+      appState: { ...restored.appState, theme: colorSchemeRef.current },
       captureUpdate: CaptureUpdateAction.NEVER,
     });
     window.setTimeout(() => {
@@ -257,7 +257,7 @@ export function BoardPage() {
           if (isGuestEditor && !collaboratorName) {
             const scene = board.scene ?? {};
             lastSceneJsonRef.current = JSON.stringify(scene);
-            setInitialData({ ...scene, appState: { ...scene.appState, viewModeEnabled: true } });
+            setInitialData({ ...scene, appState: { ...scene.appState, theme: colorSchemeRef.current, viewModeEnabled: true } });
             setSceneReady(true);
             setGuestNameDialogOpen(true);
             return;
@@ -313,7 +313,7 @@ export function BoardPage() {
             }
 
             lastSceneJsonRef.current = JSON.stringify(scene);
-            setInitialData({ ...scene, appState: { ...scene.appState, viewModeEnabled: false } });
+            setInitialData({ ...scene, appState: { ...scene.appState, theme: colorSchemeRef.current, viewModeEnabled: false } });
             setSceneReady(true);
           });
           return;
@@ -321,7 +321,7 @@ export function BoardPage() {
 
         const scene = board.scene ?? {};
         lastSceneJsonRef.current = JSON.stringify(scene);
-        setInitialData({ ...scene, appState: { ...scene.appState, viewModeEnabled: true } });
+        setInitialData({ ...scene, appState: { ...scene.appState, theme: colorSchemeRef.current, viewModeEnabled: true } });
         setSceneReady(true);
       })
       .catch(() => navigate("/"));
@@ -412,10 +412,6 @@ export function BoardPage() {
     }
 
     setActiveUsersOpen(false);
-  }
-
-  function toggleColorScheme() {
-    setColorScheme((current) => current === "dark" ? "light" : "dark");
   }
 
   function submitGuestName() {
@@ -635,15 +631,7 @@ export function BoardPage() {
             </div>
           )}
         </div>
-        <button
-          className="btn-ghost"
-          onClick={toggleColorScheme}
-          aria-label={colorScheme === "dark" ? t("useLightMode") : t("useDarkMode")}
-          title={colorScheme === "dark" ? t("useLightMode") : t("useDarkMode")}
-          style={{ padding: "0.35rem 0.55rem", color: "var(--color-text)" }}
-        >
-          {colorScheme === "dark" ? "Light" : "Dark"}
-        </button>
+        <ThemeToggle />
         {canManage && (
           <button className="btn-primary" onClick={() => { setShareOpen(true); setShareStatus(""); }}>
             {t("share")}
@@ -664,6 +652,10 @@ export function BoardPage() {
             onPointerUpdate={handlePointerUpdate}
             excalidrawAPI={(api) => {
               excalidrawApiRef.current = api;
+              api.updateScene({
+                appState: { theme: colorScheme },
+                captureUpdate: CaptureUpdateAction.NEVER,
+              });
               const pendingScene = pendingRemoteSceneRef.current;
               if (pendingScene) {
                 pendingRemoteSceneRef.current = null;
@@ -891,6 +883,5 @@ function pickPersistedAppState(appState: AppState): PersistedScene["appState"] {
   return {
     viewBackgroundColor: appState.viewBackgroundColor,
     gridSize: appState.gridSize,
-    theme: appState.theme,
   };
 }

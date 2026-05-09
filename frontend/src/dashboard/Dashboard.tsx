@@ -2,6 +2,7 @@ import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useSession } from "../auth/useSession";
+import { ThemeToggle } from "../theme/ThemeToggle";
 
 interface Board {
   _id: string;
@@ -123,6 +124,7 @@ export function Dashboard() {
           <span style={{ fontWeight: 700, fontSize: "1rem" }}>FOSScalidraw</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+          <ThemeToggle />
           <span style={{ fontSize: "0.875rem", color: "var(--color-text-muted)" }}>{session?.user.email}</span>
           <button className="btn-ghost" onClick={signOut}>{t("signOut")}</button>
         </div>
@@ -196,7 +198,7 @@ export function Dashboard() {
           onClick={(e) => e.stopPropagation()}
           style={{
             position: "fixed", top: contextMenu.y, left: contextMenu.x,
-            width: "190px", background: "var(--color-surface)",
+            width: "190px", background: "var(--color-surface-raised)",
             border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)",
             boxShadow: "var(--shadow-md)", padding: "0.35rem", zIndex: 1000
           }}
@@ -294,7 +296,7 @@ function Modal({
       aria-label={title}
       onClick={onClose}
       style={{
-        position: "fixed", inset: 0, background: "rgba(0,0,0,0.28)",
+        position: "fixed", inset: 0, background: "var(--color-overlay)",
         display: "flex", alignItems: "center", justifyContent: "center",
         padding: "1rem", zIndex: 1100
       }}
@@ -302,7 +304,7 @@ function Modal({
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          width: "100%", maxWidth: "400px", background: "var(--color-surface)",
+          width: "100%", maxWidth: "400px", background: "var(--color-surface-raised)",
           border: "1px solid var(--color-border)", borderRadius: "var(--radius-lg)",
           boxShadow: "var(--shadow-md)", padding: "1.25rem", display: "grid", gap: "1rem"
         }}

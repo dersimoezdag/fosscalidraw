@@ -75,3 +75,54 @@ select {
   color: var(--color-text);
   background: var(--color-control-bg);
 }
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--color-text);
+  padding: 0.25rem 0.35rem;
+  border-radius: var(--radius-md);
+}
+
+.theme-toggle:hover {
+  background: rgba(0,0,0,0.05);
+}
+
+:root[data-theme="dark"] .theme-toggle:hover {
+  background: rgba(255,255,255,0.08);
+}
+
+.theme-toggle__icon {
+  width: 1rem;
+  line-height: 1;
+  font-size: 0.9rem;
+}
+
+.theme-toggle__track {
+  width: 2.35rem;
+  height: 1.25rem;
+  padding: 0.15rem;
+  border-radius: 999px;
+  background: var(--color-border);
+  transition: background 160ms ease;
+}
+
+.theme-toggle[aria-checked="true"] .theme-toggle__track {
+  background: var(--color-primary);
+}
+
+.theme-toggle__thumb {
+  display: block;
+  width: 0.95rem;
+  height: 0.95rem;
+  border-radius: 999px;
+  background: var(--color-surface);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.22);
+  transform: translateX(0);
+  transition: transform 160ms ease;
+}
+
+.theme-toggle[aria-checked="true"] .theme-toggle__thumb {
+  transform: translateX(1.1rem);
+}

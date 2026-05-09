@@ -3,8 +3,10 @@ import { Dashboard } from "./dashboard/Dashboard";
 import { BoardPage } from "./dashboard/BoardPage";
 import { LoginPage } from "./auth/LoginPage";
 import { useSession } from "./auth/useSession";
+import { useColorScheme } from "./theme/useColorScheme";
 
 export default function App() {
+  useColorScheme();
   const { session, loading } = useSession();
 
   if (loading) {
