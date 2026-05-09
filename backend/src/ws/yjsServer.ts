@@ -1,0 +1,62 @@
+import { IncomingMessage, Server } from "http";
+import { WebSocketServer, WebSocket } from "ws";
+// @ts-ignore
+import { setupWSConnection, setPersistence } from "y-websocket/bin/utils";
+import { MongodbPersistence } from "y-mongodb-provider";
+import * as Y from "yjs";
+import { getSession } from "@auth/express";
+import { authHandler } from "../auth/auth.config.js";
+import { Board } from "../boards/boards.model.js";
+
+export function initYjsServer(httpServer: Server) {
+  const mdb = new MongodbPersistence(process.env.MONGODB_URI!, {
+    collectionName: "yjs-updates",
+    multipleCollections: true,
+  });
+
+  setPersistence({
+    bindState: async (docName: string, ydoc: Y.Doc) => {
+      const persistedDoc = await mdb.getYDoc(docName);
+      const persistedSV = Y.encodeStateVector(persistedDoc);
+      const diff = Y.encodeStateAsUpdate(ydoc, persistedSV);
+      if (diff.some((v: number) => v > 0)) {
+        mdb.storeUpdate(docName, diff);
+      }
+      Y.applyUpdate(ydoc, Y.encodeStateAsUpdate(persistedDoc));
+      ydoc.on("update", (update: Uint8Array) => {
+        mdb.storeUpdate(docName, update);
+      });
+    },
+    writeState: () => Promise.resolve(),
+  });
+
+  const wss = new WebSocketServer({ noServer: true });
+  wss.on("connection", (ws: WebSocket, req: IncomingMessage) => {
+    setupWSConnection(ws, req);
+  });
+
+  httpServer.on("upgrade", async (req, socket, head) => {
+    const match = req.url?.match(/^\/ws\/([a-f0-9]{24})$/);
+    if (!match) { socket.destroy(); return; }
+    const boardId = match[1];
+
+    const session = await getSession(req as any, authHandler).catch(() => null);
+    if (!session?.user) { socket.destroy(); return; }
+
+    const board = await Board.findById(boardId).catch(() => null);
+    if (!board) { socket.destroy(); return; }
+
+    const email = session.user.email!;
+    const hasAccess =
+      board.ownerEmail === email ||
+      board.members.some((m: any) => m.email === email);
+
+    if (!hasAccess) { socket.destroy(); return; }
+
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      wss.emit("connection", ws, req);
+    });
+  });
+
+  console.log("Yjs WebSocket server initialized");
+}
