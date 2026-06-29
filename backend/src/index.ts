@@ -50,8 +50,14 @@ const httpServer = createServer(app);
 // Yjs WebSocket server (replaces excalidraw-room)
 initYjsServer(httpServer);
 
-connectMongo().then(() => {
-  httpServer.listen(config.port, () => {
-    console.log(`FOSScalidraw backend running on port ${config.port}`);
+connectMongo()
+  .then(() => {
+    httpServer.listen(config.port, () => {
+      console.log(`FOSScalidraw backend running on port ${config.port}`);
+    });
+  })
+  .catch((err) => {
+    console.error("MongoDB connection failed:", err.message);
+    console.error("Check MONGODB_URI in your .env file.");
+    process.exit(1);
   });
-});
