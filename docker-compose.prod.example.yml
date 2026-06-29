@@ -26,7 +26,7 @@ services:
     env_file: ${ENV_FILE:-.env}
     environment:
       BACKEND_PORT: ${BACKEND_PORT:-3001}
-      MONGODB_URI: mongodb://${MONGO_ROOT_USERNAME}:${MONGO_ROOT_PASSWORD}@mongo:27017/fosscalidraw?authSource=admin
+      MONGODB_URI: ${MONGODB_URI:-mongodb://${MONGO_ROOT_USERNAME}:${MONGO_ROOT_PASSWORD}@mongo:27017/fosscalidraw?authSource=admin}
     expose:
       - "${BACKEND_PORT:-3001}"
 
