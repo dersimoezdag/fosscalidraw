@@ -36,7 +36,7 @@ services:
     depends_on:
       - backend
     environment:
-      BACKEND_PORT: ${BACKEND_PORT:-3001}
+      BACKEND_URI: http://backend:${BACKEND_PORT:-3001}
     ports:
       - "127.0.0.1:${FRONTEND_PORT:-3000}:80"
 
