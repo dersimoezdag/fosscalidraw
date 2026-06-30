@@ -33,10 +33,10 @@ if (process.env.AUTH_OIDC_ISSUER && process.env.AUTH_OIDC_CLIENT_ID && process.e
     issuer: process.env.AUTH_OIDC_ISSUER,
     authorization: {
       params: {
-        scope: "openid email profile",
+        scope: "openid email profile roles",
       },
     },
-    checks: ["state", "nonce"],
+    checks: ["state", "pkce", "nonce"],
     client: {
       token_endpoint_auth_method: tokenEndpointAuthMethod,
     },
