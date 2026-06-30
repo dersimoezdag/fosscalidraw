@@ -13,5 +13,5 @@ COPY docker-entrypoint.d/19-validate-backend-uri.envsh /docker-entrypoint.d/19-v
 COPY docker-entrypoint.d/20-wait-for-backend-health.sh /docker-entrypoint.d/20-wait-for-backend-health.sh
 RUN chmod +x /docker-entrypoint.d/19-validate-backend-uri.envsh /docker-entrypoint.d/20-wait-for-backend-health.sh
 ENV NGINX_ENVSUBST_FILTER="^BACKEND_URI$"
-EXPOSE 80
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 CMD curl -fsS http://127.0.0.1/health >/dev/null || exit 1
+EXPOSE 3000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 CMD curl -fsS http://127.0.0.1:3000/health >/dev/null || exit 1
