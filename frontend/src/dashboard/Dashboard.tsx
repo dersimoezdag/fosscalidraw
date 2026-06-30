@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { useSession } from "../auth/useSession";
+import { useSessionContext } from "../auth/SessionContext";
 import { ThemeToggle } from "../theme/ThemeToggle";
 import { dottedBackgroundAppStateKey, type BoardBackgroundStyle } from "../collaboration/sceneSync";
 
@@ -54,7 +54,7 @@ export function Dashboard() {
   const [importStatus, setImportStatus] = useState("");
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const navigate = useNavigate();
-  const { session, signOut } = useSession();
+  const { session, signOut } = useSessionContext();
 
   useEffect(() => {
     fetch("/api/boards", { credentials: "include" })

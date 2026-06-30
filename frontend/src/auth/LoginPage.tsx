@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useSession } from "./useSession";
+import { useSessionContext } from "./SessionContext";
 import { ThemeToggle } from "../theme/ThemeToggle";
 
 type AuthProvider = {
@@ -9,7 +9,7 @@ type AuthProvider = {
 };
 
 export function LoginPage() {
-  const { session, loading } = useSession();
+  const { session, loading } = useSessionContext();
   const navigate = useNavigate();
   const [providers, setProviders] = useState<AuthProvider[]>([]);
   const [hasDevOidc, setHasDevOidc] = useState(false);

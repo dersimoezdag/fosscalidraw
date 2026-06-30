@@ -3,11 +3,11 @@ import { Dashboard } from "./dashboard/Dashboard";
 import { BoardPage } from "./dashboard/BoardPage";
 import { LoginPage } from "./auth/LoginPage";
 import { useSession } from "./auth/useSession";
+import { SessionContext, useSessionContext } from "./auth/SessionContext";
 import { useColorScheme } from "./theme/useColorScheme";
 
-export default function App() {
-  useColorScheme();
-  const { session, loading } = useSession();
+function AppRoutes() {
+  const { session, loading } = useSessionContext();
 
   if (loading) {
     return (
@@ -18,13 +18,24 @@ export default function App() {
   }
 
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/" element={session ? <Dashboard /> : <Navigate to="/login" replace />} />
-        <Route path="/board/:id" element={<BoardPage />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </BrowserRouter>
+    <Routes>
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/" element={session ? <Dashboard /> : <Navigate to="/login" replace />} />
+      <Route path="/board/:id" element={<BoardPage />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
+
+export default function App() {
+  useColorScheme();
+  const { session, loading, signOut } = useSession();
+
+  return (
+    <SessionContext.Provider value={{ session, loading, signOut }}>
+      <BrowserRouter>
+        <AppRoutes />
+      </BrowserRouter>
+    </SessionContext.Provider>
   );
 }

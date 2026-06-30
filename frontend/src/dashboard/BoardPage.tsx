@@ -42,7 +42,7 @@ import {
   isOnlyLocalAwarenessChange,
   markKicked,
 } from "../collaboration/presence";
-import { useSession } from "../auth/useSession";
+import { useSessionContext } from "../auth/SessionContext";
 import { ThemeToggle } from "../theme/ThemeToggle";
 import { useColorScheme } from "../theme/useColorScheme";
 import {
@@ -71,7 +71,7 @@ const excalidrawUiOptions = {
 
 export function BoardPage() {
   const { t, i18n } = useTranslation();
-  const { session } = useSession();
+  const { session } = useSessionContext();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const providerRef = useRef<CollabProvider | null>(null);
