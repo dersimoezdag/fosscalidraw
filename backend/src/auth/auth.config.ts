@@ -25,13 +25,37 @@ if (process.env.AUTH_GITHUB_ID && process.env.AUTH_GITHUB_SECRET) {
 // Federated OIDC — externe Management-App
 if (process.env.AUTH_OIDC_ISSUER && process.env.AUTH_OIDC_CLIENT_ID && process.env.AUTH_OIDC_CLIENT_SECRET) {
   const oidcName = process.env.AUTH_OIDC_NAME ?? "Management App";
-  providers.push({
+  const oidcScope = process.env.AUTH_OIDC_SCOPE ?? "openid email profile";
+  const oidcChecks = parseOidcChecks(process.env.AUTH_OIDC_CHECKS ?? "pkce,state,nonce");
+  const tokenEndpointAuthMethod = process.env.AUTH_OIDC_TOKEN_AUTH_METHOD ?? "client_secret_post";
+  const oidcProvider: any = {
     id: "oidc",
     name: oidcName,
     type: "oidc",
     issuer: process.env.AUTH_OIDC_ISSUER,
+    authorization: {
+      params: {
+        scope: oidcScope,
+      },
+    },
+    checks: oidcChecks,
+    client: {
+      token_endpoint_auth_method: tokenEndpointAuthMethod,
+    },
     clientId: process.env.AUTH_OIDC_CLIENT_ID!,
     clientSecret: process.env.AUTH_OIDC_CLIENT_SECRET!,
+  };
+
+  if (process.env.AUTH_OIDC_WELL_KNOWN) {
+    oidcProvider.wellKnown = process.env.AUTH_OIDC_WELL_KNOWN;
+  }
+
+  if (process.env.AUTH_OIDC_ID_TOKEN === "false") {
+    oidcProvider.idToken = false;
+  }
+
+  providers.push({
+    ...oidcProvider,
   });
   publicAuthProviders.push({ id: "oidc", name: oidcName });
 }
@@ -56,3 +80,18 @@ export const authConfig = {
 };
 
 export const authHandler = ExpressAuth(authConfig);
+
+function parseOidcChecks(value: string) {
+  const allowed = new Set(["pkce", "state", "nonce", "none"]);
+  const checks = value
+    .split(",")
+    .map((check) => check.trim())
+    .filter(Boolean);
+
+  const invalidChecks = checks.filter((check) => !allowed.has(check));
+  if (invalidChecks.length > 0) {
+    throw new Error(`Invalid AUTH_OIDC_CHECKS value: ${invalidChecks.join(", ")}`);
+  }
+
+  return checks;
+}

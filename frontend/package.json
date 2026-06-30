@@ -1,6 +1,6 @@
 {
   "name": "fosscalidraw-frontend",
-  "version": "0.1.19",
+  "version": "0.1.20",
   "description": "FOSScalidraw frontend",
   "private": true,
   "type": "module",
