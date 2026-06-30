@@ -78,7 +78,8 @@ connectMongo()
     });
   })
   .catch((error) => {
-    console.error("[startup] Backend startup failed. MongoDB is not reachable.");
-    console.error(error);
+    const message = error instanceof Error ? error.message : "Unknown startup error";
+    console.error(`[startup] Backend startup failed: ${message}`);
+    console.error("[startup] Check MONGODB_URI and MongoDB network reachability.");
     process.exit(1);
   });

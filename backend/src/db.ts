@@ -1,13 +1,19 @@
 import mongoose from "mongoose";
 import { config } from "./config.js";
 
+const mongoConnectOptions = {
+  serverSelectionTimeoutMS: 10000,
+  connectTimeoutMS: 10000,
+};
+
 export async function connectMongo() {
   const uri = config.mongoUri!;
+  const hostname = getMongoHostname(uri);
 
   for (let attempt = 1; attempt <= config.mongoConnectRetries; attempt += 1) {
     try {
-      console.log(`[startup] Checking MongoDB connection (${attempt}/${config.mongoConnectRetries})...`);
-      await mongoose.connect(uri);
+      console.log(`[startup] Checking MongoDB connection at ${hostname} (${attempt}/${config.mongoConnectRetries})...`);
+      await mongoose.connect(uri, mongoConnectOptions);
       await mongoose.connection.db?.admin().ping();
       console.log("[startup] MongoDB is reachable.");
       return;
@@ -47,6 +53,14 @@ export async function checkMongoHealth() {
       readyState,
       message: error instanceof Error ? error.message : "MongoDB ping failed",
     };
+  }
+}
+
+function getMongoHostname(uri: string) {
+  try {
+    return new URL(uri).hostname;
+  } catch {
+    return "configured MongoDB host";
   }
 }
 
