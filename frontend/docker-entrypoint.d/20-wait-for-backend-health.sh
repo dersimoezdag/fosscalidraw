@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 
-backend_port="${BACKEND_PORT:-3001}"
-backend_health_url="${BACKEND_HEALTH_URL:-http://backend:${backend_port}/health}"
+backend_uri="${BACKEND_URI:-http://backend:3001}"
+backend_health_url="${BACKEND_HEALTH_URL:-${backend_uri}/health}"
 max_attempts="${BACKEND_HEALTH_RETRIES:-20}"
 delay_seconds="${BACKEND_HEALTH_RETRY_DELAY_SECONDS:-3}"
 
