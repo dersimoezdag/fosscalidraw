@@ -26,9 +26,11 @@ Open http://localhost:3000
 
 ```
 frontend/   ← React app (Excalidraw fork shell)
-backend/    ← Express + Auth.js + Yjs WS Server + MongoDB
+backend/    ← Express + Auth.js + Yjs WS + SPA serving (single port)
+mongo/      ← MongoDB persistence
 ```
 
+The backend serves the SPA build directly — no separate web server container needed.
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for full details.
 
 ## Auth Modes
@@ -61,10 +63,12 @@ Before exposing FOSScalidraw publicly:
 - Configure at least one complete auth provider: Google, GitHub, or OIDC.
 - Keep `AUTH_DEV_OIDC=false` and `VITE_DEV_OIDC=false`.
 - Set a strong `MONGO_ROOT_PASSWORD`, or use a managed MongoDB URI.
-- Put a TLS reverse proxy in front of the frontend container.
+- Put a TLS reverse proxy in front of the container.
 - Keep regular MongoDB backups of the `mongo_data` volume or managed database.
 
 The backend validates the most important production settings on startup and exits on unsafe defaults.
+No separate web server (nginx/Caddy) is needed inside the container — Express serves the SPA,
+API, Auth.js routes, and WebSocket on a single port.
 
 If you already started the local MongoDB container before authentication was enabled, the existing
 `mongo_data` volume may not contain the configured root user. For local development, recreate it with:
@@ -78,18 +82,8 @@ Do this only for disposable local data. For production, create users/backups del
 
 ## Deployment Behind A Reverse Proxy
 
-The Docker Compose setup exposes:
-
-- Frontend/Nginx on `localhost:3000`
-- Backend API on `localhost:3001`
-- MongoDB only inside the Compose network
-
-For production, put a TLS reverse proxy in front of the frontend service and expose only HTTPS to users.
-The frontend container already proxies these internal paths to the backend:
-
-- `/api/` for board REST calls
-- `/auth/` for Auth.js
-- `/ws/` for Yjs WebSocket collaboration
+The single app container serves SPA, API, Auth, and WebSocket on one port.
+For production, put a TLS reverse proxy in front of it and expose only HTTPS.
 
 Set `APP_URL` to the public HTTPS origin:
 
@@ -105,15 +99,14 @@ VITE_DEV_OIDC=false
 After publishing the images to Docker Hub, use `docker-compose.prod.example.yml` as the deployment
 template. It uses:
 
-- `dersimoezdag/fosscalidraw-backend:0.1.11`
-- `dersimoezdag/fosscalidraw-frontend:0.1.11`
+- `dersimoezdag/fosscalidraw-backend:0.2.0` (includes SPA serving — no separate frontend container)
 - `mongo:7`
 
 Prepare the production env file:
 
 ```bash
 cp .env.production.example .env
-# edit .env and set APP_URL, AUTH_SECRET, Mongo password, ports, and auth provider credentials
+# edit .env and set APP_URL, AUTH_SECRET, Mongo password, and auth provider credentials
 ```
 
 Start the stack:
@@ -125,10 +118,8 @@ docker compose -f docker-compose.prod.example.yml up -d
 Docker Compose uses `.env` automatically for `${...}` interpolation. Keep the real `.env` on the
 server only and do not commit it.
 
-The production example binds the frontend only to `127.0.0.1:${FRONTEND_PORT:-3000}`, so your host
-reverse proxy can serve HTTPS publicly while the backend remains private inside the Compose network.
-`BACKEND_PORT` is the internal container port used between frontend and backend; `FRONTEND_PORT` is
-the local host port your reverse proxy connects to.
+The production example binds the app to `127.0.0.1:${BACKEND_PORT:-3000}`, so your host reverse
+proxy can serve HTTPS publicly while the container remains private.
 
 To upgrade later, change the image tags in `docker-compose.prod.example.yml` and run:
 
@@ -139,8 +130,7 @@ docker compose -f docker-compose.prod.example.yml up -d
 
 ### Example: Host Nginx Reverse Proxy
 
-This example assumes Docker Compose publishes the frontend container on `127.0.0.1:3000`.
-If you set `FRONTEND_PORT=7300`, replace `3000` with `7300` below.
+This example assumes the container publishes on `127.0.0.1:3000`.
 Use Certbot, your platform, or your own certificate automation for the TLS files.
 
 ```nginx

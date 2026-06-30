@@ -4,12 +4,18 @@ import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import { createServer } from "http";
+import path from "path";
+import { fileURLToPath } from "url";
 import { authRouter } from "./auth/auth.routes.js";
 import { publicAuthProviders } from "./auth/auth.config.js";
 import { boardsRouter } from "./boards/boards.router.js";
 import { initYjsServer } from "./ws/yjsServer.js";
 import { checkMongoHealth, connectMongo } from "./db.js";
 import { config, validateConfig } from "./config.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const frontendDist = path.resolve(__dirname, "../../frontend/dist");
 
 validateConfig();
 console.log(
@@ -68,6 +74,18 @@ app.use("/auth", authRouter);
 
 // Board REST API
 app.use("/api/boards", boardsRouter);
+
+// ── Frontend static files (SPA) ──────────────────
+app.use(express.static(frontendDist));
+
+// SPA fallback — serve index.html for all non-API, non-Auth, non-WS paths
+app.get("*", (req, res, next) => {
+  // Don't serve index.html for API/Auth/WS paths that we already handled
+  if (req.path.startsWith("/api/") || req.path.startsWith("/auth/") || req.path.startsWith("/ws/")) {
+    return next();
+  }
+  res.sendFile(path.join(frontendDist, "index.html"));
+});
 
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error(err);

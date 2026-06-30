@@ -1,15 +1,27 @@
-FROM node:20-alpine AS builder
+# ── Build frontend (SPA) ───────────────────────────
+FROM node:20-alpine AS frontend-builder
 WORKDIR /app
-COPY package*.json ./
+COPY frontend/package*.json ./
 RUN npm ci
-COPY . .
+COPY frontend/ .
 RUN npm run build
 
+# ── Build backend ──────────────────────────────────
+FROM node:20-alpine AS backend-builder
+WORKDIR /app
+COPY backend/package*.json ./
+RUN npm ci
+COPY backend/ .
+RUN npm run build
+
+# ── Runtime ────────────────────────────────────────
 FROM node:20-alpine
 WORKDIR /app
-COPY package*.json ./
+COPY --from=backend-builder /app/package*.json ./
+COPY --from=backend-builder /app/dist ./dist
+COPY --from=frontend-builder /app/dist ./frontend/dist
 RUN npm ci --omit=dev
-COPY --from=builder /app/dist ./dist
-EXPOSE 3001
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 CMD node -e "fetch('http://127.0.0.1:' + (process.env.BACKEND_PORT || 3001) + '/health').then((res) => process.exit(res.ok ? 0 : 1)).catch(() => process.exit(1))"
+
+EXPOSE 3000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 CMD node -e "fetch('http://127.0.0.1:' + (process.env.BACKEND_PORT || 3000) + '/health').then((res) => process.exit(res.ok ? 0 : 1)).catch(() => process.exit(1))"
 CMD ["node", "dist/index.js"]

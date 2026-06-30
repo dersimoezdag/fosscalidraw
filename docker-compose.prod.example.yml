@@ -1,6 +1,8 @@
 # Docker Compose automatically uses .env for ${...} interpolation.
 # Copy .env.production.example to .env on the server, edit it, then run:
 # docker compose -f docker-compose.prod.example.yml up -d
+#
+# One container runs Express (SPA + API + WebSocket). No extra nginx needed.
 services:
   mongo:
     image: mongo:7
@@ -17,29 +19,18 @@ services:
       timeout: 5s
       retries: 5
 
-  backend:
-    image: dersimoezdag/fosscalidraw-backend:0.1.22
+  app:
+    image: dersimoezdag/fosscalidraw-backend:0.2.0
     restart: unless-stopped
     depends_on:
       mongo:
         condition: service_healthy
     env_file: ${ENV_FILE:-.env}
     environment:
-      BACKEND_PORT: ${BACKEND_PORT:-3001}
+      BACKEND_PORT: ${BACKEND_PORT:-3000}
       MONGODB_URI: ${MONGODB_URI:-mongodb://${MONGO_ROOT_USERNAME}:${MONGO_ROOT_PASSWORD}@mongo:27017/fosscalidraw?authSource=admin}
-    expose:
-      - "${BACKEND_PORT:-3001}"
-
-  frontend:
-    image: dersimoezdag/fosscalidraw-frontend:0.1.22
-    restart: unless-stopped
-    depends_on:
-      backend:
-        condition: service_healthy
-    environment:
-      BACKEND_URI: http://backend:${BACKEND_PORT:-3001}
     ports:
-      - "127.0.0.1:${FRONTEND_PORT:-3000}:3000"
+      - "127.0.0.1:${BACKEND_PORT:-3000}:${BACKEND_PORT:-3000}"
 
 volumes:
   mongo_data:
