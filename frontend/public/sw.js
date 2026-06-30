@@ -5,6 +5,8 @@ self.addEventListener("install", () => {
 });
 
 self.addEventListener("activate", () => {
+  // Claim all clients so we can reload them after unregistering
+  self.clients.claim();
   self.registration
     .unregister()
     .then(() => self.clients.matchAll({ type: "window" }))
