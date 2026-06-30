@@ -5,12 +5,21 @@ import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import { createServer } from "http";
 import { authRouter } from "./auth/auth.routes.js";
+import { publicAuthProviders } from "./auth/auth.config.js";
 import { boardsRouter } from "./boards/boards.router.js";
 import { initYjsServer } from "./ws/yjsServer.js";
 import { checkMongoHealth, connectMongo } from "./db.js";
 import { config, validateConfig } from "./config.js";
 
 validateConfig();
+console.log(
+  `[startup] Auth providers enabled: ${
+    publicAuthProviders.length > 0
+      ? publicAuthProviders.map((provider) => `${provider.id} (${provider.name})`).join(", ")
+      : "none"
+  }`
+);
+
 const app = express();
 
 app.set("trust proxy", 1);

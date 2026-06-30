@@ -20,22 +20,27 @@ export function LoginPage() {
   }, [session, loading, navigate]);
 
   useEffect(() => {
-    Promise.all([
-      fetch("/auth/providers", { credentials: "include" }),
-      fetch("/auth/csrf", { credentials: "include" }),
-    ])
-      .then(async ([providersResponse, csrfResponse]) => {
-        if (!providersResponse.ok || !csrfResponse.ok) throw new Error("Unable to load auth configuration");
+    fetch("/auth/providers", { credentials: "include" })
+      .then(async (providersResponse) => {
+        if (!providersResponse.ok) throw new Error("Unable to load auth providers");
         const providersData = await providersResponse.json() as { providers?: AuthProvider[]; devOidc?: boolean };
-        const csrfData = await csrfResponse.json() as { csrfToken?: string };
 
         setProviders(providersData.providers ?? []);
         setHasDevOidc(Boolean(providersData.devOidc));
-        setCsrfToken(csrfData.csrfToken ?? "");
       })
       .catch(() => {
         setProviders([]);
         setHasDevOidc(false);
+      });
+
+    fetch("/auth/csrf", { credentials: "include" })
+      .then(async (csrfResponse) => {
+        if (!csrfResponse.ok) throw new Error("Unable to load auth CSRF token");
+        const csrfData = await csrfResponse.json() as { csrfToken?: string };
+
+        setCsrfToken(csrfData.csrfToken ?? "");
+      })
+      .catch(() => {
         setCsrfToken("");
       });
   }, []);
