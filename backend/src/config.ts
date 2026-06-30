@@ -14,6 +14,8 @@ export const config = {
   jsonBodyLimit: process.env.JSON_BODY_LIMIT ?? "10mb",
   apiRateLimitWindowMs: Number(process.env.API_RATE_LIMIT_WINDOW_MS ?? 60_000),
   apiRateLimitMax: Number(process.env.API_RATE_LIMIT_MAX ?? (isProduction ? 240 : 1200)),
+  mongoConnectRetries: Number(process.env.MONGO_CONNECT_RETRIES ?? 20),
+  mongoConnectRetryDelayMs: Number(process.env.MONGO_CONNECT_RETRY_DELAY_MS ?? 3000),
 };
 
 export function validateConfig() {

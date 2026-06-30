@@ -7,7 +7,7 @@ import { createServer } from "http";
 import { authRouter } from "./auth/auth.routes.js";
 import { boardsRouter } from "./boards/boards.router.js";
 import { initYjsServer } from "./ws/yjsServer.js";
-import { connectMongo } from "./db.js";
+import { checkMongoHealth, connectMongo } from "./db.js";
 import { config, validateConfig } from "./config.js";
 
 validateConfig();
@@ -22,6 +22,30 @@ app.use(cors({
   origin: config.appUrl,
   credentials: true,
 }));
+
+// Health
+app.get("/health", async (req, res) => {
+  const mongodb = await checkMongoHealth();
+  const healthy = mongodb.status === "ok";
+  const frontendStatus = req.get("x-fosscalidraw-frontend-status");
+
+  res.status(healthy ? 200 : 503).json({
+    status: healthy ? "ok" : "unhealthy",
+    service: "backend",
+    checks: {
+      ...(frontendStatus ? {
+        frontend: {
+          status: frontendStatus,
+        },
+      } : {}),
+      backend: {
+        status: "ok",
+      },
+      mongodb,
+    },
+  });
+});
+
 app.use(rateLimit({
   windowMs: config.apiRateLimitWindowMs,
   limit: config.apiRateLimitMax,
@@ -36,9 +60,6 @@ app.use("/auth", authRouter);
 // Board REST API
 app.use("/api/boards", boardsRouter);
 
-// Health
-app.get("/health", (_req, res) => res.json({ status: "ok" }));
-
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error(err);
   if (res.headersSent) return;
@@ -50,8 +71,14 @@ const httpServer = createServer(app);
 // Yjs WebSocket server (replaces excalidraw-room)
 initYjsServer(httpServer);
 
-connectMongo().then(() => {
-  httpServer.listen(config.port, () => {
-    console.log(`FOSScalidraw backend running on port ${config.port}`);
+connectMongo()
+  .then(() => {
+    httpServer.listen(config.port, () => {
+      console.log(`[startup] FOSScalidraw backend running on port ${config.port}`);
+    });
+  })
+  .catch((error) => {
+    console.error("[startup] Backend startup failed. MongoDB is not reachable.");
+    console.error(error);
+    process.exit(1);
   });
-});
