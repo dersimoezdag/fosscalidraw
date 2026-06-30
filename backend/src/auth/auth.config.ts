@@ -36,7 +36,7 @@ if (process.env.AUTH_OIDC_ISSUER && process.env.AUTH_OIDC_CLIENT_ID && process.e
         scope: "openid email profile",
       },
     },
-    checks: ["pkce", "state", "nonce"],
+    checks: ["state", "nonce"],
     client: {
       token_endpoint_auth_method: tokenEndpointAuthMethod,
     },
