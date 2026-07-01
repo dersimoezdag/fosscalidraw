@@ -176,20 +176,20 @@ export function Dashboard() {
     <div style={{ minHeight: "100vh", background: "var(--color-bg)" }}>
       <header style={{
         display: "flex", alignItems: "center", justifyContent: "space-between",
-        padding: "0 2rem", height: "56px", background: "var(--color-surface)",
+        padding: "0 1rem 0 1.5rem", height: "56px", background: "var(--color-surface)",
         borderBottom: "1px solid var(--color-border)", position: "sticky", top: 0, zIndex: 10
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-          <svg width="28" height="28" viewBox="0 0 32 32" fill="none">
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", minWidth: 0 }}>
+          <svg width="28" height="28" viewBox="0 0 32 32" fill="none" style={{ flexShrink: 0 }}>
             <rect width="32" height="32" rx="8" fill="#01696f"/>
             <path d="M8 24 L14 10 L18 18 L21 14 L25 24" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
             <circle cx="8" cy="24" r="2" fill="white"/>
           </svg>
-          <span style={{ fontWeight: 700, fontSize: "1rem" }}>FOSScalidraw</span>
+          <span className="hide-mobile" style={{ fontWeight: 700, fontSize: "1rem" }}>FOSScalidraw</span>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+        <div className="dash-header-right" style={{ display: "flex", alignItems: "center", gap: "1rem", minWidth: 0 }}>
           <ThemeToggle />
-          <span style={{ fontSize: "0.875rem", color: "var(--color-text-muted)" }}>{session?.user.email}</span>
+          <span className="dash-user-email" style={{ fontSize: "0.875rem", color: "var(--color-text-muted)" }}>{session?.user.email}</span>
           <button className="btn-ghost" onClick={signOut}>{t("signOut")}</button>
         </div>
       </header>

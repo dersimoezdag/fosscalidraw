@@ -843,8 +843,9 @@ export function BoardPage() {
         </div>
         <ThemeToggle />
         {canManage && (
-          <button className="btn-primary" onClick={() => { setShareOpen(true); setShareStatus(""); }}>
-            {t("share")}
+          <button className="btn-primary mobile-icon-btn" onClick={() => { setShareOpen(true); setShareStatus(""); }}>
+            <span aria-hidden="true" style={{ fontSize: "1.1rem", lineHeight: 1 }}>↗</span>
+            <span className="btn-label">{t("share")}</span>
           </button>
         )}
       </div>

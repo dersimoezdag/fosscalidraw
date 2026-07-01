@@ -185,3 +185,34 @@ select {
 :root[data-theme="dark"] .fosscalidraw-board-canvas--dotted .excalidraw::after {
   opacity: 0.42;
 }
+
+/* ── Responsive Utilities ── */
+
+@media (max-width: 640px) {
+  .hide-mobile {
+    display: none !important;
+  }
+
+  .show-mobile {
+    display: revert !important;
+  }
+
+  .mobile-icon-btn span.btn-label {
+    display: none;
+  }
+
+  .mobile-icon-btn {
+    padding: 0.5rem !important;
+  }
+
+  .dash-header-right {
+    gap: 0.35rem !important;
+  }
+
+  .dash-user-email {
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
