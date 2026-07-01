@@ -15,7 +15,7 @@ import { config, validateConfig } from "./config.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const frontendDist = path.resolve(__dirname, "../../frontend/dist");
+const frontendDist = path.resolve(__dirname, "../frontend/dist");
 
 validateConfig();
 console.log(
