@@ -197,12 +197,17 @@ select {
     display: revert !important;
   }
 
-  .mobile-icon-btn span.btn-label {
+  .btn-label {
     display: none;
   }
 
-  .mobile-icon-btn {
+  .mobile-icon-btn,
+  .btn-ghost.btn-back {
     padding: 0.5rem !important;
+  }
+
+  .btn-ghost.btn-back {
+    gap: 0 !important;
   }
 
   .dash-header-right {

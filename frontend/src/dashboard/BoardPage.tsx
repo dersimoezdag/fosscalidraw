@@ -679,7 +679,7 @@ export function BoardPage() {
         borderBottom: "1px solid var(--color-border)", zIndex: 10, flexShrink: 0
       }}>
         <button
-          className="btn-ghost"
+          className="btn-ghost btn-back"
           onClick={() => navigate("/")}
           aria-label={t("back")}
           title={t("back")}
@@ -694,7 +694,7 @@ export function BoardPage() {
           }}
         >
           <span aria-hidden="true" style={{ fontSize: "1.1rem", lineHeight: 1 }}>←</span>
-          <span>{t("back")}</span>
+          <span className="btn-label">{t("back")}</span>
         </button>
         <div style={{
           display: "flex", alignItems: "center", gap: "0.35rem",
