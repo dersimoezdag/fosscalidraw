@@ -40,6 +40,8 @@ Configure Google/GitHub OAuth directly in `.env`.
 
 ### Federated (external management app)
 Set `AUTH_OIDC_ISSUER` in `.env` to delegate auth to your own OIDC provider.
+The default OIDC scope is `openid email profile`; override `AUTH_OIDC_SCOPE` only if your provider
+explicitly supports additional scopes.
 
 ### Development OIDC simulation
 For local development only, set:
@@ -99,7 +101,7 @@ VITE_DEV_OIDC=false
 After publishing the images to Docker Hub, use `docker-compose.prod.example.yml` as the deployment
 template. It uses:
 
-- `dersimoezdag/fosscalidraw:0.1.24`
+- `dersimoezdag/fosscalidraw:0.1.25`
 - `mongo:7`
 
 Prepare the production env file:

@@ -26,6 +26,7 @@ if (process.env.AUTH_GITHUB_ID && process.env.AUTH_GITHUB_SECRET) {
 if (process.env.AUTH_OIDC_ISSUER && process.env.AUTH_OIDC_CLIENT_ID && process.env.AUTH_OIDC_CLIENT_SECRET) {
   const oidcName = process.env.AUTH_OIDC_NAME ?? "Management App";
   const tokenEndpointAuthMethod = process.env.AUTH_OIDC_TOKEN_AUTH_METHOD ?? "client_secret_post";
+  const oidcScope = process.env.AUTH_OIDC_SCOPE ?? "openid email profile";
   const oidcProvider: any = {
     id: "oidc",
     name: oidcName,
@@ -33,7 +34,7 @@ if (process.env.AUTH_OIDC_ISSUER && process.env.AUTH_OIDC_CLIENT_ID && process.e
     issuer: process.env.AUTH_OIDC_ISSUER,
     authorization: {
       params: {
-        scope: "openid email profile roles",
+        scope: oidcScope,
       },
     },
     checks: ["state", "pkce"],
