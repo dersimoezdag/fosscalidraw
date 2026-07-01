@@ -2,7 +2,7 @@
 # Copy .env.production.example to .env on the server, edit it, then run:
 # docker compose -f docker-compose.prod.example.yml up -d
 #
-# One container runs Express (SPA + API + WebSocket). No extra nginx needed.
+# One container runs Express (SPA + API + WebSocket). Put TLS reverse proxying on the host.
 services:
   mongo:
     image: mongo:7
@@ -20,7 +20,7 @@ services:
       retries: 5
 
   app:
-    image: dersimoezdag/fosscalidraw-backend:0.2.0
+    image: dersimoezdag/fosscalidraw:0.1.23
     restart: unless-stopped
     depends_on:
       mongo:

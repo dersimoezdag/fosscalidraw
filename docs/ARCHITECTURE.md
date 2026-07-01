@@ -10,7 +10,7 @@
 | Authentication | Auth.js v5 (@auth/express) | ISC |
 | Backend framework | Express | MIT |
 | Database | MongoDB + Mongoose | Apache 2 |
-| Container | Docker + nginx | Apache 2 |
+| Container | Docker + Node.js | MIT |
 
 ## Auth Modes
 

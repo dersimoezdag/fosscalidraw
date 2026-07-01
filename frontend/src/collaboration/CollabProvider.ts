@@ -12,7 +12,7 @@ export interface CollabProvider {
 export function createCollabProvider(boardId: string): CollabProvider {
   const ydoc = new Y.Doc();
 
-  // Use relative WS URL — nginx proxies /ws to backend
+  // Use the same origin as the served app.
   const wsUrl = window.location.origin.replace(/^http/, "ws");
 
   const provider = new WebsocketProvider(

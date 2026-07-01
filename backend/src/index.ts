@@ -42,18 +42,12 @@ app.use(cors({
 app.get("/health", async (req, res) => {
   const mongodb = await checkMongoHealth();
   const healthy = mongodb.status === "ok";
-  const frontendStatus = req.get("x-fosscalidraw-frontend-status");
 
   res.status(healthy ? 200 : 503).json({
     status: healthy ? "ok" : "unhealthy",
-    service: "backend",
+    service: "app",
     checks: {
-      ...(frontendStatus ? {
-        frontend: {
-          status: frontendStatus,
-        },
-      } : {}),
-      backend: {
+      app: {
         status: "ok",
       },
       mongodb,
@@ -101,12 +95,12 @@ initYjsServer(httpServer);
 connectMongo()
   .then(() => {
     httpServer.listen(config.port, () => {
-      console.log(`[startup] FOSScalidraw backend running on port ${config.port}`);
+      console.log(`[startup] FOSScalidraw running on port ${config.port}`);
     });
   })
   .catch((error) => {
     const message = error instanceof Error ? error.message : "Unknown startup error";
-    console.error(`[startup] Backend startup failed: ${message}`);
+    console.error(`[startup] FOSScalidraw startup failed: ${message}`);
     console.error("[startup] Check MONGODB_URI and MongoDB network reachability.");
     process.exit(1);
   });

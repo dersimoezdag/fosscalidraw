@@ -67,7 +67,7 @@ Before exposing FOSScalidraw publicly:
 - Keep regular MongoDB backups of the `mongo_data` volume or managed database.
 
 The backend validates the most important production settings on startup and exits on unsafe defaults.
-No separate web server (nginx/Caddy) is needed inside the container — Express serves the SPA,
+No separate web server is needed inside the container — Express serves the SPA,
 API, Auth.js routes, and WebSocket on a single port.
 
 If you already started the local MongoDB container before authentication was enabled, the existing
@@ -99,7 +99,7 @@ VITE_DEV_OIDC=false
 After publishing the images to Docker Hub, use `docker-compose.prod.example.yml` as the deployment
 template. It uses:
 
-- `dersimoezdag/fosscalidraw-backend:0.2.0` (includes SPA serving — no separate frontend container)
+- `dersimoezdag/fosscalidraw:0.1.23`
 - `mongo:7`
 
 Prepare the production env file:
@@ -172,8 +172,7 @@ server {
 }
 ```
 
-If your host Nginx talks directly to the backend instead of the frontend container, make sure `/ws/`
-still uses the WebSocket upgrade headers above.
+Make sure `/ws/` uses the WebSocket upgrade headers above.
 
 ### OAuth Callback URLs
 
@@ -199,7 +198,8 @@ regular `mongodump` backups or a managed MongoDB service with automated snapshot
 - API rate limiting is enabled through `API_RATE_LIMIT_WINDOW_MS` and `API_RATE_LIMIT_MAX`.
 - JSON request size is limited through `JSON_BODY_LIMIT`.
 - Docker Compose enables MongoDB authentication by default.
-- Nginx forwards `X-Forwarded-*` headers for correct secure-cookie detection behind TLS proxies.
+- Configure your host reverse proxy to forward `X-Forwarded-*` headers for correct secure-cookie
+  detection behind TLS proxies.
 
 ## License
 
