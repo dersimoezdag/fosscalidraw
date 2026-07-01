@@ -1,6 +1,6 @@
 {
   "name": "fosscalidraw",
-  "version": "0.1.26",
+  "version": "0.1.27",
   "description": "Open-source collaborative whiteboard",
   "private": true,
   "scripts": {
@@ -8,7 +8,7 @@
     "dev:frontend": "cd frontend && npm run dev",
     "install:all": "cd backend && npm install && cd ../frontend && npm install",
     "docker:up": "docker compose up",
-    "docker:build": "docker build -t dersimoezdag/fosscalidraw:0.1.26 -t dersimoezdag/fosscalidraw:latest ."
+    "docker:build": "docker build -t dersimoezdag/fosscalidraw:0.1.27 -t dersimoezdag/fosscalidraw:latest ."
   },
   "license": "MIT"
 }

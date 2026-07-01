@@ -67,11 +67,18 @@ export const authConfig = {
     async jwt({ token, profile }: any) {
       if (profile?.roles) token.role = profile.roles;
       if (profile?.role) token.role = profile.role;
+      if (profile?.name) token.name = profile.name;
+      if (!token.name && profile?.preferred_username) token.name = profile.preferred_username;
+      if (!token.name && profile?.given_name) token.name = profile.given_name;
+      if (profile?.picture) token.picture = profile.picture;
+      if (profile?.avatar && !token.picture) token.picture = profile.avatar;
       return token;
     },
     async session({ session, token }: any) {
       session.user.id = token.sub ?? token.email ?? session.user.email;
       session.user.email = token.email ?? session.user.email;
+      session.user.name = token.name ?? session.user.name ?? session.user.email;
+      session.user.image = token.picture ?? session.user.image;
       session.user.role = token.role ?? "editor";
       return session;
     },

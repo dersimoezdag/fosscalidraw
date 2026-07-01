@@ -1,6 +1,6 @@
 {
   "name": "fosscalidraw-backend",
-  "version": "0.1.26",
+  "version": "0.1.27",
   "description": "FOSScalidraw backend — Auth.js + Yjs WS + MongoDB",
   "type": "module",
   "scripts": {
