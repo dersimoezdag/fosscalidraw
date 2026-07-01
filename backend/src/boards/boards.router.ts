@@ -1,6 +1,7 @@
 import { NextFunction, Request, Response, Router } from "express";
 import { Board } from "./boards.model.js";
 import { optionalAuth, requireAuth } from "../middleware/authGuard.js";
+import { apiTokenAuth } from "../middleware/apiTokenAuth.js";
 import { getOrSetGuestId } from "../guests/guestIdentity.js";
 
 export const boardsRouter = Router();
@@ -42,6 +43,7 @@ boardsRouter.patch("/:id/scene", optionalAuth, asyncRoute(async (req, res) => {
   res.json({ ok: true, updatedAt: board.updatedAt });
 }));
 
+boardsRouter.use(apiTokenAuth);
 boardsRouter.use(requireAuth);
 
 boardsRouter.get("/", asyncRoute(async (req, res) => {

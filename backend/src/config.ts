@@ -16,6 +16,9 @@ export const config = {
   apiRateLimitMax: Number(process.env.API_RATE_LIMIT_MAX ?? (isProduction ? 240 : 1200)),
   mongoConnectRetries: Number(process.env.MONGO_CONNECT_RETRIES ?? 20),
   mongoConnectRetryDelayMs: Number(process.env.MONGO_CONNECT_RETRY_DELAY_MS ?? 3000),
+  apiToken: process.env.API_TOKEN,
+  apiUserEmail: process.env.API_USER_EMAIL ?? "api@fosscalidraw.local",
+  apiUserName: process.env.API_USER_NAME ?? "API Bot",
 };
 
 export function validateConfig() {
