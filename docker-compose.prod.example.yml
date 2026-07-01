@@ -20,17 +20,16 @@ services:
       retries: 5
 
   app:
-    image: dersimoezdag/fosscalidraw:0.1.23
+    image: dersimoezdag/fosscalidraw:0.1.24
     restart: unless-stopped
     depends_on:
       mongo:
         condition: service_healthy
     env_file: ${ENV_FILE:-.env}
     environment:
-      BACKEND_PORT: ${BACKEND_PORT:-3000}
       MONGODB_URI: ${MONGODB_URI:-mongodb://${MONGO_ROOT_USERNAME}:${MONGO_ROOT_PASSWORD}@mongo:27017/fosscalidraw?authSource=admin}
     ports:
-      - "127.0.0.1:${BACKEND_PORT:-3000}:${BACKEND_PORT:-3000}"
+      - "127.0.0.1:3000:3000"
 
 volumes:
   mongo_data:

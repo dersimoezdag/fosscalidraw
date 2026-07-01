@@ -6,7 +6,7 @@ process.env.AUTH_URL = authUrl;
 
 export const config = {
   isProduction,
-  port: process.env.BACKEND_PORT ?? 3000,
+  port: Number(process.env.PORT ?? process.env.BACKEND_PORT ?? 3000),
   appUrl,
   authUrl,
   mongoUri: process.env.MONGODB_URI,

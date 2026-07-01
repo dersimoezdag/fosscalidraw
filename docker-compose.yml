@@ -24,10 +24,9 @@ services:
         condition: service_healthy
     env_file: .env
     environment:
-      BACKEND_PORT: ${BACKEND_PORT:-3000}
       MONGODB_URI: ${MONGODB_URI:-mongodb://${MONGO_ROOT_USERNAME:-fosscalidraw}:${MONGO_ROOT_PASSWORD:-change-me-local-mongo-password}@mongo:27017/fosscalidraw?authSource=admin}
     ports:
-      - "${BACKEND_PORT:-3000}:${BACKEND_PORT:-3000}"
+      - "3000:3000"
 
 volumes:
   mongo_data:

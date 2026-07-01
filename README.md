@@ -99,7 +99,7 @@ VITE_DEV_OIDC=false
 After publishing the images to Docker Hub, use `docker-compose.prod.example.yml` as the deployment
 template. It uses:
 
-- `dersimoezdag/fosscalidraw:0.1.23`
+- `dersimoezdag/fosscalidraw:0.1.24`
 - `mongo:7`
 
 Prepare the production env file:
@@ -118,7 +118,7 @@ docker compose -f docker-compose.prod.example.yml up -d
 Docker Compose uses `.env` automatically for `${...}` interpolation. Keep the real `.env` on the
 server only and do not commit it.
 
-The production example binds the app to `127.0.0.1:${BACKEND_PORT:-3000}`, so your host reverse
+The production example binds the app to `127.0.0.1:3000`, so your host reverse
 proxy can serve HTTPS publicly while the container remains private.
 
 To upgrade later, change the image tags in `docker-compose.prod.example.yml` and run:
